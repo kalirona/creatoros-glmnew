@@ -21,6 +21,7 @@ import { SettingsModule } from '@/components/modules/settings'
 import { AdminModule } from '@/components/modules/admin'
 import { CertificatesModule } from '@/components/modules/certificates'
 import { MediaLibraryModule } from '@/components/modules/media-library'
+import { AutomationModule } from '@/components/modules/automation'
 import { CourseBuilder } from '@/components/course-builder/builder'
 import type { ModuleId } from '@/lib/nav'
 
@@ -42,6 +43,7 @@ const MODULES: Record<ModuleId, React.ComponentType> = {
   'admin': AdminModule,
   'certificates': CertificatesModule,
   'media-library': MediaLibraryModule,
+  'automation': AutomationModule,
 }
 
 export default function Home() {

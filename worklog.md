@@ -773,3 +773,68 @@ Stage Summary:
 - Invite People fully functional with 4 methods
 - Members page production-ready with all management actions
 - Audit logs generated for all administrative actions
+
+---
+Task ID: PLATFORM-RESTRUCTURE
+Agent: Main (Z.ai Code) — CreatorOS Platform Restructure
+Task: Transform CreatorOS from page-builder focus to AI-powered Creator Business Platform (LearnHouse + Kajabi + Circle + Gumroad + Skool model)
+
+Work Log:
+- Read entire project: nav.ts, sidebar.tsx, page.tsx, pages-funnels.tsx, community.ts, all 60 API routes, schema.prisma (41 models)
+- Produced 6 architecture documents:
+  * WEBSITE_ARCHITECTURE.md (~390 lines) — new architecture vision, 10 pillars, AI generation flow
+  * PUBLIC_FRONTEND_PLAN.md (~520 lines) — LearnHouse/Kajabi-inspired frontend, route map, component tree
+  * WEBSITE_DATABASE_FLOW.md (~560 lines) — DB→API→Public Page flow, auto-generation for courses/products/community/blog
+  * WEBSITE_NAVIGATION.md (~540 lines) — new sidebar structure, tab mappings, keyboard shortcuts
+  * WEBSITE_SEO_PLAN.md (~590 lines) — auto SEO per page type, JSON-LD schemas, sitemap, robots.txt
+  * WEBSITE_MIGRATION_PLAN.md (~560 lines) — 6-stage non-destructive migration, risk matrix, rollback strategy
+- Restructured sidebar navigation (src/lib/nav.ts):
+  * Overview: Dashboard, AI Studio, Analytics
+  * Create & Sell: Courses, Digital Products, Store
+  * Community: Community
+  * Customers: CRM, Email Marketing, Memberships, Affiliates
+  * Website: Website (renamed from "Pages & Funnels")
+  * System: Media Library, Automation, Certificates, Support, Settings, Super Admin
+- Added new 'automation' module ID to ModuleId type
+- Created src/components/modules/automation.tsx — Automation module with FunnelsPanel (moved from pages-funnels.tsx)
+- Updated src/app/page.tsx to import and register AutomationModule
+- Transformed Pages & Funnels module into Website module (src/components/modules/pages-funnels.tsx):
+  * Renamed header to "Website" with new description
+  * Added "Home" tab (default) with auto-generated pages overview — shows /courses, /store, /community, /blog, /membership, /about, /contact, /pricing
+  * Removed "Funnels" tab (moved to Automation module)
+  * Renamed "Site Settings" tab to "Branding"
+  * Updated "AI Landing Page" button to "AI Generate Page"
+  * Added HomePanel component with:
+    - Auto-generated pages grid (9 pages with icons, slugs, status)
+    - "How it works" card (4 steps: Create content → AI generates → Edit with forms → Publish)
+    - "View Site" button
+  * Removed dead FunnelsPanel function (moved to automation.tsx)
+  * Added missing icon imports (GraduationCap, Package, CreditCard)
+- Updated keyboard shortcuts: "G F" (Pages & Funnels) → "G W" (Website)
+
+Browser-Verified:
+- ✅ New sidebar renders with 6 groups: Overview, Create & Sell, Community, Customers, Website, System
+- ✅ Website module loads with "Home" tab showing auto-generated pages overview
+- ✅ Website tabs: Home, Pages, Landing Pages, Navigation, Blog, Branding, SEO, Domains (no Funnels)
+- ✅ Automation module loads with funnels stats and "New Funnel" button
+- ✅ Dashboard loads with "Welcome back, Alex" and revenue metrics
+- ✅ Courses module loads with course list
+- ✅ CRM module loads with Customers/Orders tabs
+- ✅ Email Marketing loads with "New Campaign" button
+- ✅ Settings loads with Workspace/Team tabs
+- ✅ Community loads with Feed/Spaces/Members/Events tabs
+- ✅ Zero console errors
+- ✅ Zero runtime errors
+
+Stage Summary:
+- Lint: 0 errors
+- TypeScript: 0 errors
+- Dev server: HTTP 200
+- 6 architecture documents produced (total ~3,160 lines)
+- Sidebar restructured to business-first layout
+- Website module replaces Pages & Funnels (page builder de-emphasized)
+- Automation module created (Funnels moved here)
+- No broken navigation — all 18 modules accessible and functional
+- No dead code — removed unused FunnelsPanel from pages-funnels.tsx
+- No data loss — no schema changes, no DB changes
+- Backward compatible — all existing module IDs preserved, APIs unchanged

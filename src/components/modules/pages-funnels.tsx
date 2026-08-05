@@ -7,6 +7,7 @@ import {
   Loader2, ArrowLeft, Save, Check, Zap, ExternalLink, Megaphone, Star, ShoppingCart,
   HelpCircle, Type, Mail, Clock, Image as ImageIcon, Video, Layout, ChevronRight,
   TrendingUp, Users, DollarSign, FileCode, Wand2, Send, GripVertical,
+  GraduationCap, Package, CreditCard,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,10 +25,10 @@ import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 
-type SubTab = 'pages' | 'landing' | 'funnels' | 'navigation' | 'blog' | 'domains' | 'seo' | 'settings'
+type SubTab = 'home' | 'pages' | 'landing' | 'navigation' | 'blog' | 'branding' | 'seo' | 'domains'
 
 export function PagesFunnelsModule() {
-  const [tab, setTab] = useState<SubTab>('pages')
+  const [tab, setTab] = useState<SubTab>('home')
   const [editingPage, setEditingPage] = useState<{ id: string; title: string; slug: string } | null>(null)
   const [generating, setGenerating] = useState(false)
 
@@ -41,31 +42,137 @@ export function PagesFunnelsModule() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Launch pages, landing pages, and sales funnels — built to sell, not to design.</p>
-        <Button size="sm" onClick={() => setGenerating(true)}><Sparkles className="h-4 w-4 mr-1.5 text-primary" /> AI Landing Page</Button>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Website</h1>
+          <p className="text-sm text-muted-foreground mt-1">Your public website is generated automatically from your courses, products, community, and blog.</p>
+        </div>
+        <Button size="sm" onClick={() => setGenerating(true)}><Sparkles className="h-4 w-4 mr-1.5 text-primary" /> AI Generate Page</Button>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as SubTab)}>
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="home"><Globe className="h-3.5 w-3.5 mr-1.5" />Home</TabsTrigger>
           <TabsTrigger value="pages"><FileText className="h-3.5 w-3.5 mr-1.5" />Pages</TabsTrigger>
           <TabsTrigger value="landing"><Rocket className="h-3.5 w-3.5 mr-1.5" />Landing Pages</TabsTrigger>
-          <TabsTrigger value="funnels"><Megaphone className="h-3.5 w-3.5 mr-1.5" />Funnels</TabsTrigger>
           <TabsTrigger value="navigation"><Menu className="h-3.5 w-3.5 mr-1.5" />Navigation</TabsTrigger>
           <TabsTrigger value="blog"><BookOpen className="h-3.5 w-3.5 mr-1.5" />Blog</TabsTrigger>
-          <TabsTrigger value="domains"><Server className="h-3.5 w-3.5 mr-1.5" />Domains</TabsTrigger>
+          <TabsTrigger value="branding"><Settings2 className="h-3.5 w-3.5 mr-1.5" />Branding</TabsTrigger>
           <TabsTrigger value="seo"><SearchIcon className="h-3.5 w-3.5 mr-1.5" />SEO</TabsTrigger>
-          <TabsTrigger value="settings"><Settings2 className="h-3.5 w-3.5 mr-1.5" />Site Settings</TabsTrigger>
+          <TabsTrigger value="domains"><Server className="h-3.5 w-3.5 mr-1.5" />Domains</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="home"><HomePanel /></TabsContent>
         <TabsContent value="pages"><PagesList type="PAGE" onEdit={(p) => setEditingPage(p)} /></TabsContent>
         <TabsContent value="landing"><PagesList type="LANDING" onEdit={(p) => setEditingPage(p)} onGenerate={() => setGenerating(true)} /></TabsContent>
-        <TabsContent value="funnels"><FunnelsPanel /></TabsContent>
         <TabsContent value="navigation"><NavigationPanel /></TabsContent>
         <TabsContent value="blog"><BlogPanel /></TabsContent>
-        <TabsContent value="domains"><DomainsPanel /></TabsContent>
+        <TabsContent value="branding"><SiteSettingsPanel /></TabsContent>
         <TabsContent value="seo"><SeoPanel /></TabsContent>
-        <TabsContent value="settings"><SiteSettingsPanel /></TabsContent>
+        <TabsContent value="domains"><DomainsPanel /></TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+// ===== Home Panel — Website overview with auto-generated pages =====
+function HomePanel() {
+  const { data: communityData } = useApi<{ stats: { totalPosts: number; totalSpaces: number; totalEvents: number; totalMembers: number } }>('/api/data/community')
+  const { data: dashboardData } = useApi<{ stats: { totalCourses: number; totalProducts: number; totalOrders: number; totalRevenue: number } }>('/api/data/dashboard')
+
+  const stats = dashboardData?.stats || { totalCourses: 0, totalProducts: 0, totalOrders: 0, totalRevenue: 0 }
+  const communityStats = communityData?.stats || { totalPosts: 0, totalSpaces: 0, totalEvents: 0, totalMembers: 0 }
+
+  const autoPages = [
+    { label: 'Homepage', slug: '/', icon: Globe, status: 'Auto-generated', desc: 'Hero, featured courses, products, community highlights' },
+    { label: 'Courses', slug: '/courses', icon: GraduationCap, status: `${stats.totalCourses} courses`, desc: 'Automatically lists all published courses' },
+    { label: 'Store', slug: '/store', icon: Package, status: `${stats.totalProducts} products`, desc: 'Automatically lists all active products' },
+    { label: 'Community', slug: '/community', icon: Users, status: `${communityStats.totalMembers} members`, desc: 'Feed, spaces, events, members' },
+    { label: 'Blog', slug: '/blog', icon: BookOpen, status: 'Auto-generated', desc: 'Categories, tags, authors, archives' },
+    { label: 'Membership', slug: '/membership', icon: CreditCard, status: 'Plans', desc: 'Membership tiers and pricing' },
+    { label: 'About', slug: '/about', icon: FileText, status: 'Editable', desc: 'Custom page — edit in Pages tab' },
+    { label: 'Contact', slug: '/contact', icon: Mail, status: 'Editable', desc: 'Custom page — edit in Pages tab' },
+    { label: 'Pricing', slug: '/pricing', icon: ShoppingCart, status: 'Editable', desc: 'Custom page — edit in Pages tab' },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <Card className="bg-gradient-to-br from-primary/10 to-card border-primary/20">
+        <CardContent className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/15 text-primary">
+              <Globe className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-bold">Your website is auto-generated</h3>
+              <p className="text-sm text-muted-foreground mt-1">Pages are created automatically from your courses, products, community, and blog. No need to design — just create content and the website updates itself.</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => window.open('/', '_blank')}>
+              <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View Site
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {autoPages.map((page) => {
+          const Icon = page.icon
+          return (
+            <Card key={page.slug} className="hover:shadow-md transition">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold">{page.label}</p>
+                      <Badge variant="secondary" className="text-[10px]">{page.status}</Badge>
+                    </div>
+                    <code className="text-xs text-primary">{page.slug}</code>
+                    <p className="text-xs text-muted-foreground mt-1">{page.desc}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">How it works</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">1</div>
+            <div>
+              <p className="text-sm font-medium">Create content</p>
+              <p className="text-xs text-muted-foreground">Add courses, products, blog posts, and community spaces. The website generates pages automatically.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">2</div>
+            <div>
+              <p className="text-sm font-medium">AI generates landing pages</p>
+              <p className="text-xs text-muted-foreground">Use AI to generate custom landing pages with reusable sections — Hero, Features, Testimonials, Pricing, FAQ, CTA.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">3</div>
+            <div>
+              <p className="text-sm font-medium">Edit with forms, not drag-and-drop</p>
+              <p className="text-xs text-muted-foreground">Edit text and images through simple forms. No complex page builder, no absolute positioning, no custom CSS.</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold">4</div>
+            <div>
+              <p className="text-sm font-medium">Publish</p>
+              <p className="text-xs text-muted-foreground">Your website is live. SEO, Open Graph, and structured data are generated automatically.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -526,104 +633,6 @@ function SectionFields({ type, content, set }: { type: string; content: Record<s
       </div></>
   }
   return <p className="text-xs text-muted-foreground">No editable fields for this section type.</p>
-}
-
-// ===== Funnels panel =====
-function FunnelsPanel() {
-  const { data, loading, refetch } = useApi<{ funnels: { id: string; name: string; description: string; type: string; status: string; visits: number; conversions: number; revenue: number; steps: { id: string; name: string; type: string; position: number; isRequired: boolean; page: { id: string; title: string; slug: string } | null }[] }[]; stats: { total: number; live: number; totalVisits: number; totalRevenue: number } }>('/api/data/funnels')
-  const [createOpen, setCreateOpen] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDesc, setNewDesc] = useState('')
-  const [creating, setCreating] = useState(false)
-
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
-  const STEP_ICONS: Record<string, React.ComponentType<{ className?: string }>> = { LANDING: Rocket, CHECKOUT: ShoppingCart, UPSELL: TrendingUp, DOWNSELL: TrendingUp, THANK_YOU: Check, EMAIL: Mail, COMMUNITY_INVITE: Users, COURSE_ACCESS: FileText }
-
-  const createFunnel = async () => {
-    if (!newName.trim()) { toast.error('Funnel name is required'); return }
-    setCreating(true)
-    try {
-      const res = await fetch('/api/data/funnels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName.trim(), description: newDesc, type: 'SALES' }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed')
-      toast.success('Funnel created', { description: `"${newName}" is ready. Add steps to start building.` })
-      setCreateOpen(false); setNewName(''); setNewDesc('')
-      refetch()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setCreating(false) }
-  }
-
-  const deleteFunnel = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This will remove all steps. This cannot be undone.`)) return
-    try {
-      const res = await fetch(`/api/data/funnels?id=${id}`, { method: 'DELETE' })
-      if (!res.ok) { const j = await res.json(); throw new Error(j.error || 'Failed') }
-      toast.success('Funnel deleted', { description: `"${name}" has been removed.` })
-      refetch()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { l: 'Funnels', v: data.stats.total, i: Megaphone },
-          { l: 'Live', v: data.stats.live, i: Check },
-          { l: 'Total Visits', v: formatNumber(data.stats.totalVisits, true), i: Eye },
-          { l: 'Revenue', v: `$${formatNumber(data.stats.totalRevenue, true)}`, i: DollarSign },
-        ].map((s) => { const Icon = s.i; return (
-          <Card key={s.l}><CardContent className="p-4 flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></div><div><p className="text-lg font-bold tabular-nums leading-none">{s.v}</p><p className="text-xs text-muted-foreground mt-1">{s.l}</p></div></CardContent></Card>
-        )})}
-      </div>
-
-      <div className="flex items-center justify-between"><h3 className="text-sm font-semibold">Your Funnels</h3><Button size="sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Funnel</Button></div>
-
-      {data.funnels.length === 0 ? (
-        <Card><CardContent className="p-12 text-center"><Megaphone className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" /><p className="text-sm font-medium">No funnels yet</p><p className="text-xs text-muted-foreground mt-1">Create your first funnel to connect pages into a sales sequence.</p><Button size="sm" className="mt-3" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Funnel</Button></CardContent></Card>
-      ) : data.funnels.map((f) => (
-        <Card key={f.id}>
-          <CardHeader className="pb-3 flex-row items-center justify-between">
-            <div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600"><Megaphone className="h-5 w-5" /></div><div><p className="font-semibold text-sm">{f.name}</p><p className="text-xs text-muted-foreground">{f.description || 'No description'}</p></div></div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className={cn('text-xs', f.status === 'LIVE' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{f.status}</Badge>
-              <span className="text-xs text-muted-foreground hidden sm:inline">{formatNumber(f.visits)} visits · {f.conversions} conv. · ${formatNumber(f.revenue)}</span>
-              <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-rose-500 hover:text-rose-600" onClick={() => deleteFunnel(f.id, f.name)}><Trash2 className="h-4 w-4" /></Button>
-            </div>
-          </CardHeader>
-          {f.steps.length > 0 && (
-            <CardContent>
-              <div className="flex items-center gap-1 overflow-x-auto scroll-thin pb-2">
-                {f.steps.map((s, i) => { const Icon = STEP_ICONS[s.type] || FileText; return (
-                  <div key={s.id} className="flex items-center shrink-0">
-                    <div className={cn('flex flex-col items-center gap-1 rounded-lg border p-2.5 w-28 text-center', s.page ? 'bg-card' : 'bg-muted/30 border-dashed')}>
-                      <div className={cn('flex h-7 w-7 items-center justify-center rounded-full', s.isRequired ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}><Icon className="h-3.5 w-3.5" /></div>
-                      <p className="text-xs font-medium leading-tight">{s.name}</p>
-                      <Badge variant="secondary" className="text-[10px] h-4 px-1">{s.type}</Badge>
-                    </div>
-                    {i < f.steps.length - 1 && <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mx-0.5" />}
-                  </div>
-                )})}
-              </div>
-            </CardContent>
-          )}
-        </Card>
-      ))}
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>New Funnel</DialogTitle><DialogDescription>Create a sales funnel to connect pages into a conversion sequence.</DialogDescription></DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5"><Label className="text-sm font-medium">Funnel name <span className="text-destructive">*</span></Label><Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Course Launch Funnel" /></div>
-            <div className="space-y-1.5"><Label className="text-sm font-medium">Description</Label><Textarea rows={2} value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="What does this funnel sell?" /></div>
-          </div>
-          <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button onClick={createFunnel} disabled={creating}>{creating ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Creating...</> : 'Create funnel'}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
 }
 
 // ===== Navigation panel =====
