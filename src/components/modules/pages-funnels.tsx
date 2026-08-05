@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Globe, FileText, Rocket, Menu, BookOpen, Server, Search as SearchIcon, Settings2,
@@ -29,12 +29,21 @@ import { LandingEditor } from '@/components/editor/landing-editor'
 type SubTab = 'home' | 'pages' | 'landing' | 'navigation' | 'blog' | 'branding' | 'seo' | 'domains'
 
 export function PagesFunnelsModule() {
+  const { activeSubTab } = useAppStore()
   const [tab, setTab] = useState<SubTab>('home')
   const [editingPage, setEditingPage] = useState<{ id: string; title: string; slug: string } | null>(null)
   const [generating, setGenerating] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const [seoOpen, setSeoOpen] = useState(false)
+
+  // Sync tab with activeSubTab from sidebar navigation
+  useEffect(() => {
+    if (activeSubTab && ['pages', 'landing', 'navigation', 'blog', 'branding', 'seo', 'domains'].includes(activeSubTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTab(activeSubTab as SubTab)
+    }
+  }, [activeSubTab])
 
   if (editingPage) {
     return (

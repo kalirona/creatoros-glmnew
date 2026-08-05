@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   ShoppingBag, Package, Users, DollarSign, TrendingUp, TrendingDown, Search,
@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/app-store'
 import { ApiErrorBanner, ModuleEmptyState } from '@/components/modules/_state-utils'
 
 interface Product { id: string; name: string; price: number; salesCount: number; status: string; type: string; coverUrl: string | null; revenue: number }
@@ -31,10 +32,20 @@ const ORDER_STATUS_CLS: Record<string, string> = {
 }
 
 export function StoreModule() {
+  const { activeSubTab } = useAppStore()
+  const [storeTab, setStoreTab] = useState(activeSubTab || 'overview')
+
+  useEffect(() => {
+    if (activeSubTab && ['overview', 'catalog', 'orders', 'customers', 'coupons', 'reports'].includes(activeSubTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStoreTab(activeSubTab)
+    }
+  }, [activeSubTab])
+
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">Your storefront — manage orders, customers, coupons, and revenue.</p>
-      <Tabs defaultValue="overview">
+      <Tabs value={storeTab} onValueChange={setStoreTab}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="catalog">Catalog</TabsTrigger>

@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { User, Building2, CreditCard, Users, Shield, Bell, Globe, Key, Crown, Check, Zap } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,14 +24,23 @@ const TEAM = [
 ]
 
 export function SettingsModule() {
-  const { theme, toggleTheme } = useAppStore()
+  const { theme, toggleTheme, activeSubTab } = useAppStore()
   const [twoFA, setTwoFA] = useState(true)
   const [notifEmail, setNotifEmail] = useState(true)
   const [notifPush, setNotifPush] = useState(false)
+  const [settingsTab, setSettingsTab] = useState(activeSubTab || 'profile')
+
+  // Sync with sidebar navigation
+  useEffect(() => {
+    if (activeSubTab && ['profile', 'workspace', 'team', 'billing', 'security', 'notifications'].includes(activeSubTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSettingsTab(activeSubTab)
+    }
+  }, [activeSubTab])
 
   return (
     <div className="space-y-5">
-      <Tabs defaultValue="profile">
+      <Tabs value={settingsTab} onValueChange={setSettingsTab}>
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="profile"><User className="h-3.5 w-3.5 mr-1.5" />Profile</TabsTrigger>
           <TabsTrigger value="workspace"><Building2 className="h-3.5 w-3.5 mr-1.5" />Workspace</TabsTrigger>

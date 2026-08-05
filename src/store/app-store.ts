@@ -5,6 +5,11 @@ import type { ModuleId } from '@/lib/nav'
 interface AppState {
   activeModule: ModuleId
   setActiveModule: (m: ModuleId) => void
+  /** When set, the target module should switch to this tab (e.g., 'blog', 'billing', 'profile') */
+  activeSubTab: string | null
+  setActiveSubTab: (tab: string | null) => void
+  /** Navigate to a module AND set a sub-tab in one call */
+  navigateTo: (module: ModuleId, subTab?: string | null) => void
   sidebarCollapsed: boolean
   toggleSidebar: () => void
   commandOpen: boolean
@@ -30,7 +35,10 @@ export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
       activeModule: 'dashboard',
-      setActiveModule: (m) => set({ activeModule: m }),
+      setActiveModule: (m) => set({ activeModule: m, activeSubTab: null }),
+      activeSubTab: null,
+      setActiveSubTab: (tab) => set({ activeSubTab: tab }),
+      navigateTo: (module, subTab) => set({ activeModule: module, activeSubTab: subTab ?? null }),
       sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       commandOpen: false,

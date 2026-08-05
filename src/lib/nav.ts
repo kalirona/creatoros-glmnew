@@ -22,6 +22,8 @@ export type ModuleId =
 export interface NavSubItem {
   label: string
   moduleId: ModuleId
+  /** The tab to activate within the module (e.g., 'blog', 'billing', 'profile') */
+  subTab?: string
 }
 
 export interface NavItem {
@@ -64,7 +66,7 @@ export const NAV_GROUPS: NavGroup[] = [
         id: 'courses', label: 'Courses', icon: GraduationCap, description: 'Build and sell online courses',
         subItems: [
           { label: 'Courses', moduleId: 'courses' },
-          { label: 'Students', moduleId: 'courses' },
+          { label: 'Students', moduleId: 'courses', subTab: 'students' },
           { label: 'Certificates', moduleId: 'certificates' },
         ],
       },
@@ -79,7 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { label: 'Products', moduleId: 'products' },
           { label: 'Sales', moduleId: 'store' },
           { label: 'Memberships', moduleId: 'membership' },
-          { label: 'Orders', moduleId: 'store' },
+          { label: 'Orders', moduleId: 'store', subTab: 'orders' },
         ],
       },
     ],
@@ -90,13 +92,13 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         id: 'pages-funnels', label: 'Website', icon: Globe, description: 'Pages, landing pages, blog, SEO, domains',
         subItems: [
-          { label: 'Pages', moduleId: 'pages-funnels' },
-          { label: 'Landing Pages', moduleId: 'pages-funnels' },
-          { label: 'Blog', moduleId: 'pages-funnels' },
-          { label: 'Navigation', moduleId: 'pages-funnels' },
-          { label: 'Branding', moduleId: 'pages-funnels' },
-          { label: 'SEO', moduleId: 'pages-funnels' },
-          { label: 'Domains', moduleId: 'pages-funnels' },
+          { label: 'Pages', moduleId: 'pages-funnels', subTab: 'pages' },
+          { label: 'Landing Pages', moduleId: 'pages-funnels', subTab: 'landing' },
+          { label: 'Blog', moduleId: 'pages-funnels', subTab: 'blog' },
+          { label: 'Navigation', moduleId: 'pages-funnels', subTab: 'navigation' },
+          { label: 'Branding', moduleId: 'pages-funnels', subTab: 'branding' },
+          { label: 'SEO', moduleId: 'pages-funnels', subTab: 'seo' },
+          { label: 'Domains', moduleId: 'pages-funnels', subTab: 'domains' },
         ],
       },
       {
@@ -133,10 +135,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: 'media-library', label: 'Media', icon: FolderOpen, description: 'Images, videos, files, and assets' },
       { id: 'settings', label: 'Settings', icon: Settings, description: 'Workspace, team, billing, security',
         subItems: [
-          { label: 'Workspace', moduleId: 'settings' },
-          { label: 'Team', moduleId: 'settings' },
-          { label: 'Billing', moduleId: 'settings' },
-          { label: 'Security', moduleId: 'settings' },
+          { label: 'Workspace', moduleId: 'settings', subTab: 'workspace' },
+          { label: 'Team', moduleId: 'settings', subTab: 'team' },
+          { label: 'Billing', moduleId: 'settings', subTab: 'billing' },
+          { label: 'Security', moduleId: 'settings', subTab: 'security' },
         ],
       },
       { id: 'support', label: 'Support', icon: LifeBuoy, description: 'Tickets, help center, live chat' },

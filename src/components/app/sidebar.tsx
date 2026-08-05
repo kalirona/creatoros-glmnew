@@ -19,7 +19,7 @@ import {
 import { BuyCreditsDialog } from '@/components/app/buy-credits-dialog'
 
 export function Sidebar() {
-  const { activeModule, setActiveModule, sidebarCollapsed, toggleSidebar } = useAppStore()
+  const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar } = useAppStore()
   const [credits, setCredits] = useState(4280)
   const [buyOpen, setBuyOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -55,8 +55,8 @@ export function Sidebar() {
     }
   }
 
-  const handleSubItemClick = (moduleId: ModuleId) => {
-    setActiveModule(moduleId)
+  const handleSubItemClick = (moduleId: ModuleId, subTab?: string) => {
+    navigateTo(moduleId, subTab)
   }
 
   const allGroups = isPlatformOwner ? [...NAV_GROUPS, ADMIN_NAV_GROUP] : NAV_GROUPS
@@ -163,7 +163,7 @@ export function Sidebar() {
                                 return (
                                   <button
                                     key={`${sub.label}-${subIdx}`}
-                                    onClick={() => handleSubItemClick(sub.moduleId)}
+                                    onClick={() => handleSubItemClick(sub.moduleId, sub.subTab)}
                                     className={cn(
                                       'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors duration-100',
                                       subActive
@@ -249,19 +249,19 @@ export function Sidebar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setActiveModule('settings')}>
+            <DropdownMenuItem onClick={() => navigateTo('settings', 'profile')}>
               <User className="h-4 w-4 mr-2.5" /> Profile
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setActiveModule('settings')}>
+            <DropdownMenuItem onClick={() => navigateTo('settings', 'workspace')}>
               <Settings className="h-4 w-4 mr-2.5" /> Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setActiveModule('settings')}>
+            <DropdownMenuItem onClick={() => navigateTo('settings', 'billing')}>
               <CreditCard className="h-4 w-4 mr-2.5" /> Billing
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setActiveModule('settings')}>
+            <DropdownMenuItem onClick={() => navigateTo('settings', 'security')}>
               <Keyboard className="h-4 w-4 mr-2.5" /> Keyboard Shortcuts
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setActiveModule('support')}>
+            <DropdownMenuItem onClick={() => navigateTo('support')}>
               <HelpCircle className="h-4 w-4 mr-2.5" /> Help & Support
             </DropdownMenuItem>
             <DropdownMenuSeparator />
