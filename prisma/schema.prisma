@@ -22,6 +22,8 @@ model User {
   memberships   WorkspaceMember[]
   posts         CommunityPost[]
   comments      CommunityComment[]
+  events        CommunityEvent[]
+  rsvps         EventRSVP[]
   enrollments   Enrollment[]
   orders        Order[]
   aiConversations AiConversation[]
@@ -47,19 +49,35 @@ model Workspace {
   affiliates    Affiliate[]
   pages         WebPage[]
   memberships   MembershipPlan[]
+  communitySpaces CommunitySpace[]
+  communityEvents CommunityEvent[]
+  invitations   Invitation[]
 }
 
 model WorkspaceMember {
-  id           String   @id @default(cuid())
-  userId       String
-  workspaceId  String
-  role         String   @default("MEMBER") // OWNER|ADMIN|MANAGER|INSTRUCTOR|MODERATOR|MEMBER|STUDENT|AFFILIATE|GUEST
-  createdAt    DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  workspaceId     String
+  role            String   @default("MEMBER") // OWNER|ADMIN|MANAGER|INSTRUCTOR|MODERATOR|MEMBER|STUDENT|AFFILIATE|GUEST
+  memberStatus    String   @default("ACTIVE") // ACTIVE|SUSPENDED|BANNED|MUTED
+  mutedUntil      DateTime?
+  suspendedUntil  DateTime?
+  bannedUntil     DateTime?
+  banReason       String?
+  lastSeenAt      DateTime @default(now())
+  joinedAt        DateTime @default(now())
+  postsCount      Int      @default(0)
+  commentsCount   Int      @default(0)
+  likesReceived   Int      @default(0)
+  badges          String   @default("[]")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([userId, workspaceId])
+  @@index([workspaceId, memberStatus])
 }
 
 model Course {
@@ -155,29 +173,230 @@ model Order {
 model CommunityPost {
   id           String   @id @default(cuid())
   workspaceId  String
+  spaceId      String?
   userId       String
   category     String   @default("General")
+  postType     String   @default("POST") // POST|ANNOUNCEMENT|QUESTION|POLL|MEDIA
   title        String
   content      String
   likesCount   Int      @default(0)
   commentsCount Int     @default(0)
   isPinned     Boolean  @default(false)
+  isLocked     Boolean  @default(false)
+  isArchived   Boolean  @default(false)
+  isEdited     Boolean  @default(false)
+  editCount    Int      @default(0)
+  hashtags     String   @default("[]")
+  mentions     String   @default("[]")
+  pollOptions  String   @default("[]")
+  attachments  String   @default("[]")
+  reactions    String   @default("{}")
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space        CommunitySpace? @relation(fields: [spaceId], references: [id], onDelete: SetNull)
   comments     CommunityComment[]
+  history      PostHistory[]
+
+  @@index([workspaceId, createdAt])
+  @@index([spaceId, createdAt])
+}
+
+model PostHistory {
+  id           String   @id @default(cuid())
+  postId       String
+  editedBy     String
+  title        String
+  content      String
+  version      Int
+  createdAt    DateTime @default(now())
+
+  post         CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  @@index([postId])
 }
 
 model CommunityComment {
   id          String   @id @default(cuid())
   postId      String
+  parentId    String?
   userId      String
   content     String
+  likesCount  Int      @default(0)
+  isEdited    Boolean  @default(false)
+  mentions    String   @default("[]")
+  attachments String   @default("[]")
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   post        CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent      CommunityComment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies     CommunityComment[] @relation("CommentReplies")
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@index([parentId])
+}
+
+model CommunitySpace {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  name         String
+  slug         String
+  description  String   @default("")
+  icon         String   @default("Hash")
+  color        String   @default("emerald")
+  visibility   String   @default("PUBLIC") // PUBLIC|PRIVATE|HIDDEN|WORKSPACE_ONLY
+  memberCount  Int      @default(0)
+  postCount    Int      @default(0)
+  status       String   @default("ACTIVE") // ACTIVE|ARCHIVED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  posts        CommunityPost[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+}
+
+model CommunityEvent {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  spaceId      String?
+  userId       String
+  title        String
+  description  String   @default("")
+  type         String   @default("ONLINE") // ONLINE|OFFLINE|ZOOM|MEET|TEAMS
+  location     String?
+  meetingUrl   String?
+  startTime    DateTime
+  endTime      DateTime?
+  bannerUrl    String?
+  maxAttendees Int?
+  status       String   @default("SCHEDULED") // SCHEDULED|LIVE|COMPLETED|CANCELLED
+  createdAt    DateTime @default(now())
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rsvps        EventRSVP[]
+
+  @@index([workspaceId, startTime])
+}
+
+model EventRSVP {
+  id           String   @id @default(cuid())
+  eventId      String
+  userId       String
+  status       String   @default("GOING") // GOING|MAYBE|NOT_GOING
+  createdAt    DateTime @default(now())
+
+  event        CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+}
+
+model Invitation {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  invitedBy     String
+  email         String?
+  username      String?
+  token         String    @unique
+  role          String    @default("MEMBER")
+  status        String    @default("PENDING") // PENDING|ACCEPTED|EXPIRED|REVOKED
+  message       String    @default("")
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  acceptedByUserId String?
+  revokedAt     DateTime?
+  revokedBy     String?
+  createdAt     DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([email])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  workspaceId  String
+  type         String   // POST|COMMENT|REPLY|MENTION|INVITATION|EVENT_REMINDER|RSVP_UPDATE|REACTION|BADGE|WARNING|SYSTEM
+  title        String
+  body         String   @default("")
+  link         String   @default("")
+  actorId      String?
+  entityId     String?
+  entityType   String?
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([workspaceId, createdAt])
+}
+
+model ModerationReport {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  reporterId   String
+  targetType   String   // POST|COMMENT|USER|EVENT
+  targetId     String
+  reason       String   // SPAM|HARASSMENT|HATE_SPEECH|VIOLENCE|NSFW|OTHER
+  description  String   @default("")
+  status       String   @default("PENDING") // PENDING|REVIEWING|RESOLVED|DISMISSED
+  resolvedBy   String?
+  resolution   String?
+  createdAt    DateTime @default(now())
+  resolvedAt   DateTime?
+
+  @@index([workspaceId, status])
+  @@index([targetType, targetId])
+}
+
+model BannedKeyword {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  keyword      String
+  action       String   @default("BLOCK") // BLOCK|REVIEW|REPLACE
+  replacement  String?
+  severity     String   @default("MEDIUM")
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  @@index([workspaceId])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  actorId      String
+  actorRole    String?
+  action       String
+  targetType   String?
+  targetId     String?
+  metadata     String   @default("{}")
+  ip           String?
+  createdAt    DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([actorId])
+}
+
+model MemberWarning {
+  id           String   @id @default(cuid())
+  memberId     String
+  workspaceId  String
+  issuedBy     String
+  reason       String
+  severity     String   @default("WARNING")
+  acknowledged Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([workspaceId])
 }
 
 model Customer {
