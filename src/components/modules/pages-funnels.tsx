@@ -7,7 +7,7 @@ import {
   Loader2, ArrowLeft, Save, Check, Zap, ExternalLink, Megaphone, Star, ShoppingCart,
   HelpCircle, Type, Mail, Clock, Image as ImageIcon, Video, Layout, ChevronRight,
   TrendingUp, Users, DollarSign, FileCode, Wand2, Send, GripVertical,
-  GraduationCap, Package, CreditCard,
+  GraduationCap, Package, CreditCard, Calendar,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -398,7 +398,71 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
   const updateSection = async (id: string, content: Record<string, unknown>) => { try { await callApi('/api/data/page-sections', 'PUT', { id, content }); } catch { toast.error('Save failed') } }
   const aiAction = async (s: Section, action: string) => { setBusy(s.id + action); try { const d = await callApi('/api/ai/section-rewrite', 'POST', { action, content: s.content, sectionType: s.type }); const updated = { ...s, content: d.content }; await updateSection(s.id, d.content); toast.success(`AI ${action.toLowerCase()} done! -${d.creditsUsed} credits`); refetch() } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setBusy(null) } }
 
-  const publish = async () => { setBusy('publish'); try { toast.success('Page published', { description: 'Your changes are now live.' }); } finally { setBusy(null) } }
+  const [showPreview, setShowPreview] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [seoOpen, setSeoOpen] = useState(false)
+
+  const publish = async () => {
+    setBusy('publish')
+    try {
+      await callApi('/api/data/pages', 'PUT', { id: page.id, status: 'PUBLISHED' })
+      toast.success('Page published', { description: 'Your changes are now live.' })
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to publish')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const unpublish = async () => {
+    setBusy('unpublish')
+    try {
+      await callApi('/api/data/pages', 'PUT', { id: page.id, status: 'DRAFT' })
+      toast.success('Page unpublished', { description: 'Reverted to draft.' })
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const saveSeo = async (seoTitle: string, seoDescription: string) => {
+    setBusy('seo')
+    try {
+      await callApi('/api/data/pages', 'PUT', { id: page.id, seoTitle, seoDescription })
+      toast.success('SEO settings saved')
+      setSeoOpen(false)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const applyTemplate = async (template: { name: string; sections: Array<{ type: string; content: Record<string, unknown> }> }) => {
+    setBusy('template')
+    try {
+      if (pageData) {
+        for (const s of pageData.sections) {
+          await callApi(`/api/data/page-sections?id=${s.id}`, 'DELETE')
+        }
+      }
+      for (let i = 0; i < template.sections.length; i++) {
+        const sec = template.sections[i]
+        await callApi('/api/data/page-sections', 'POST', { pageId: page.id, type: sec.type, content: sec.content, position: i })
+      }
+      toast.success(`Template "${template.name}" applied`, { description: `${template.sections.length} sections added.` })
+      setShowTemplates(false)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed')
+    } finally {
+      setBusy(null)
+    }
+  }
 
   if (loading || !pageData) return <Skeleton className="h-96 rounded-xl" />
 
@@ -414,8 +478,20 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className={cn('text-[10px]', pageData.status === 'PUBLISHED' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{pageData.status}</Badge>
-            <Button size="sm" variant="outline" onClick={() => toast.info('Preview opened in new tab')}><Eye className="h-3.5 w-3.5 mr-1.5" />Preview</Button>
-            <Button size="sm" onClick={publish} disabled={busy === 'publish'}><Globe className="h-3.5 w-3.5 mr-1.5" />Publish</Button>
+            <Button size="sm" variant="outline" onClick={() => setShowTemplates(true)}><Layout className="h-3.5 w-3.5 mr-1.5" />Templates</Button>
+            <Button size="sm" variant="outline" onClick={() => setSeoOpen(true)}><SearchIcon className="h-3.5 w-3.5 mr-1.5" />SEO</Button>
+            <Button size="sm" variant="outline" onClick={() => setShowPreview(true)}><Eye className="h-3.5 w-3.5 mr-1.5" />Preview</Button>
+            {pageData.status === 'PUBLISHED' ? (
+              <Button size="sm" variant="outline" onClick={unpublish} disabled={busy === 'unpublish'}>
+                {busy === 'unpublish' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
+                Unpublish
+              </Button>
+            ) : (
+              <Button size="sm" onClick={publish} disabled={busy === 'publish'}>
+                {busy === 'publish' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Globe className="h-3.5 w-3.5 mr-1.5" />}
+                Publish
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -515,6 +591,60 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Preview Modal */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4" /> Preview — {pageData.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="rounded-lg border bg-white">
+            {pageData.sections.length === 0 ? (
+              <div className="p-12 text-center text-sm text-muted-foreground">No sections to preview. Add sections first.</div>
+            ) : (
+              <div className="divide-y">
+                {pageData.sections.filter(s => !s.isHidden).map((s, i) => (
+                  <div key={s.id} className="p-6">
+                    <PreviewSection section={s} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreview(false)}>Close</Button>
+            {pageData.status !== 'PUBLISHED' && (
+              <Button onClick={() => { setShowPreview(false); publish() }} disabled={busy === 'publish'}>
+                {busy === 'publish' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Globe className="h-3.5 w-3.5 mr-1.5" />}
+                Publish now
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SEO Dialog */}
+      <Dialog open={seoOpen} onOpenChange={setSeoOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>SEO Settings</DialogTitle></DialogHeader>
+          <SeoEditor
+            initialTitle={pageData.seoTitle || pageData.title}
+            initialDescription={pageData.seoDescription}
+            onSave={saveSeo}
+            saving={busy === 'seo'}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Templates Modal */}
+      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Prebuilt Templates</DialogTitle></DialogHeader>
+          <TemplatesPanel onApply={applyTemplate} loading={busy === 'template'} />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -526,6 +656,371 @@ function IconBtn({ icon: Icon, onClick, disabled, title, danger, active }: { ico
         danger ? 'text-rose-500 hover:bg-rose-500/10' : active ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
       <Icon className="h-3.5 w-3.5" />
     </button>
+  )
+}
+
+// ===== Preview Section — renders a section for preview =====
+function PreviewSection({ section }: { section: Section }) {
+  const c = section.content as Record<string, any>
+  const type = section.type
+
+  if (type === 'HERO') {
+    return (
+      <div className="text-center py-8">
+        {c.emoji && <div className="text-4xl mb-3">{c.emoji}</div>}
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">{c.headline || 'Your headline'}</h1>
+        <p className="text-lg text-gray-600 mb-4">{c.subheadline || ''}</p>
+        <div className="flex justify-center gap-2">
+          {c.ctaText && <span className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">{c.ctaText}</span>}
+          {c.ctaSecondary && <span className="rounded-lg border px-4 py-2 text-sm font-medium">{c.ctaSecondary}</span>}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'HEADING') return <h2 className={cn('text-2xl font-bold text-gray-900', c.alignment === 'center' && 'text-center', c.alignment === 'left' && 'text-left')}>{c.text || 'Heading'}</h2>
+  if (type === 'TEXT') return <p className="text-gray-600 leading-relaxed">{c.text || ''}</p>
+  if (type === 'FEATURES' || type === 'BENEFITS') {
+    const items = Array.isArray(c.items) ? c.items : []
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-1">{c.heading}</h3>}
+        {c.subheading && <p className="text-sm text-gray-500 mb-4">{c.subheading}</p>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {items.map((item: any, i: number) => (
+            <div key={i} className="rounded-lg border p-4">
+              {item.icon && <div className="text-2xl mb-2">{item.icon}</div>}
+              <p className="font-semibold text-sm">{item.title || item.name}</p>
+              <p className="text-xs text-gray-500 mt-1">{item.description || item.quote}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'TESTIMONIALS') {
+    const items = Array.isArray(c.items) ? c.items : []
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-4">{c.heading}</h3>}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {items.map((item: any, i: number) => (
+            <div key={i} className="rounded-lg border p-4">
+              <p className="text-sm text-gray-600 italic">"{item.quote}"</p>
+              <div className="mt-3 flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold">{(item.name || '?').slice(0, 2).toUpperCase()}</div>
+                <div><p className="text-xs font-medium">{item.name}</p><p className="text-[10px] text-gray-500">{item.role}</p></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'PRICING') {
+    const plans = Array.isArray(c.plans) ? c.plans : []
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">{c.heading}</h3>}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {plans.map((plan: any, i: number) => (
+            <div key={i} className={cn('rounded-lg border p-4', plan.highlighted && 'border-primary ring-2 ring-primary/20')}>
+              <p className="font-bold text-sm">{plan.name}</p>
+              <p className="text-2xl font-bold my-2">${plan.price}<span className="text-sm font-normal text-gray-500">/{plan.interval}</span></p>
+              <ul className="space-y-1 text-xs text-gray-600 mb-3">
+                {(plan.features || []).map((f: string, fi: number) => <li key={fi}>✓ {f}</li>)}
+              </ul>
+              <span className={cn('block rounded text-center py-1.5 text-xs font-medium', plan.highlighted ? 'bg-primary text-white' : 'border')}>{plan.cta}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'FAQ') {
+    const items = Array.isArray(c.items) ? c.items : []
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-4">{c.heading}</h3>}
+        <div className="space-y-2">
+          {items.map((item: any, i: number) => (
+            <div key={i} className="rounded-lg border p-3">
+              <p className="text-sm font-medium">{item.question}</p>
+              <p className="text-xs text-gray-500 mt-1">{item.answer}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'CTA') {
+    return (
+      <div className="text-center py-6 rounded-lg bg-gradient-to-br from-primary/10 to-card">
+        <h3 className="text-xl font-bold mb-1">{c.headline || 'Ready?'}</h3>
+        {c.subtext && <p className="text-sm text-gray-500 mb-3">{c.subtext}</p>}
+        <span className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">{c.ctaText || 'Start now'}</span>
+      </div>
+    )
+  }
+  if (type === 'NEWSLETTER') {
+    return (
+      <div className="text-center py-6">
+        <h3 className="text-xl font-bold mb-1">{c.heading || 'Subscribe'}</h3>
+        {c.subtext && <p className="text-sm text-gray-500 mb-3">{c.subtext}</p>}
+        <div className="flex justify-center gap-2 max-w-xs mx-auto">
+          <input className="flex-1 rounded-lg border px-3 py-2 text-sm" placeholder={c.placeholder || 'you@email.com'} disabled />
+          <span className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">{c.ctaText || 'Subscribe'}</span>
+        </div>
+      </div>
+    )
+  }
+  if (type === 'VIDEO') {
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-2">{c.heading}</h3>}
+        {c.videoUrl ? (
+          <div className="aspect-video rounded-lg bg-black flex items-center justify-center">
+            <Video className="h-12 w-12 text-white/40" />
+          </div>
+        ) : <p className="text-sm text-gray-500">No video URL set</p>}
+        {c.description && <p className="text-xs text-gray-500 mt-2">{c.description}</p>}
+      </div>
+    )
+  }
+  if (type === 'GALLERY') {
+    const images = Array.isArray(c.images) ? c.images : []
+    return (
+      <div>
+        {c.heading && <h3 className="text-xl font-bold text-gray-900 mb-3">{c.heading}</h3>}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {images.length > 0 ? images.map((img: any, i: number) => (
+            <div key={i} className="aspect-square rounded-lg bg-muted flex items-center justify-center"><ImageIcon className="h-6 w-6 text-muted-foreground/40" /></div>
+          )) : <p className="text-sm text-gray-500 col-span-full">No images</p>}
+        </div>
+      </div>
+    )
+  }
+  if (type === 'COUNTDOWN') {
+    return (
+      <div className="text-center py-6 rounded-lg bg-amber-500/10">
+        <h3 className="text-xl font-bold mb-2">{c.heading || 'Limited time'}</h3>
+        {c.endDate && <p className="text-3xl font-bold tabular-nums mb-2">{c.endDate}</p>}
+        <span className="inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white">{c.ctaText || 'Get access'}</span>
+      </div>
+    )
+  }
+  if (type === 'FOOTER') {
+    return (
+      <div className="border-t pt-6">
+        <p className="font-bold text-sm">{c.brand || 'Brand'}</p>
+        <p className="text-xs text-gray-500 mt-1">{c.tagline || ''}</p>
+      </div>
+    )
+  }
+  return <p className="text-sm text-muted-foreground">{type} section</p>
+}
+
+// ===== SEO Editor =====
+function SeoEditor({ initialTitle, initialDescription, onSave, saving }: { initialTitle: string; initialDescription: string; onSave: (title: string, description: string) => void; saving: boolean }) {
+  const [title, setTitle] = useState(initialTitle)
+  const [description, setDescription] = useState(initialDescription)
+
+  return (
+    <div className="space-y-3 py-2">
+      <div className="space-y-1.5">
+        <Label className="text-sm font-medium">SEO Title</Label>
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Page title for search engines" />
+        <p className="text-[10px] text-muted-foreground">{title.length}/60 characters</p>
+      </div>
+      <div className="space-y-1.5">
+        <Label className="text-sm font-medium">Meta Description</Label>
+        <Textarea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description for search results" />
+        <p className="text-[10px] text-muted-foreground">{description.length}/160 characters</p>
+      </div>
+      <div className="rounded-lg border bg-muted/30 p-3">
+        <p className="text-[10px] font-medium text-muted-foreground mb-1">Search Preview</p>
+        <p className="text-sm text-primary truncate">{title || 'Page title'}</p>
+        <p className="text-xs text-emerald-600 truncate">creatoros.io/your-page</p>
+        <p className="text-xs text-gray-600 line-clamp-2 mt-0.5">{description || 'Meta description will appear here.'}</p>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={() => onSave(initialTitle, initialDescription)}>Cancel</Button>
+        <Button onClick={() => onSave(title, description)} disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+          Save SEO
+        </Button>
+      </DialogFooter>
+    </div>
+  )
+}
+
+// ===== Prebuilt Templates =====
+interface PageTemplate {
+  name: string
+  description: string
+  icon: React.ComponentType<{ className?: string }>
+  sections: Array<{ type: string; content: Record<string, unknown> }>
+}
+
+const TEMPLATES: PageTemplate[] = [
+  {
+    name: 'Course Landing',
+    description: 'Hero, benefits, curriculum, testimonials, pricing, FAQ, CTA',
+    icon: GraduationCap,
+    sections: [
+      { type: 'HERO', content: { headline: 'Master [Topic] in 30 Days', subheadline: 'The complete course to take you from beginner to expert', ctaText: 'Enroll Now', ctaSecondary: 'Watch Preview', emoji: '🎓' } },
+      { type: 'BENEFITS', content: { heading: 'What you\'ll learn', subheading: 'Skills and knowledge you\'ll gain', items: [
+        { title: 'Fundamentals', description: 'Master the core concepts and principles' },
+        { title: 'Hands-on Projects', description: 'Build real-world projects as you learn' },
+        { title: 'Industry Best Practices', description: 'Learn the techniques used by professionals' },
+      ] } },
+      { type: 'TESTIMONIALS', content: { heading: 'What students say', items: [
+        { name: 'Sarah K.', role: 'Student', quote: 'This course changed my career. I went from zero to landing a job in 3 months.' },
+        { name: 'Marcus T.', role: 'Freelancer', quote: 'The best investment I\'ve made. Clear, practical, and actionable.' },
+      ] } },
+      { type: 'PRICING', content: { heading: 'Choose your plan', plans: [
+        { name: 'Self-Paced', price: 99, interval: 'one-time', features: ['Full course access', 'Downloadable resources', 'Community access'], cta: 'Get started', highlighted: false },
+        { name: 'Premium', price: 199, interval: 'one-time', features: ['Everything in Self-Paced', '1-on-1 feedback', 'Certificate of completion', 'Lifetime updates'], cta: 'Get premium', highlighted: true },
+      ] } },
+      { type: 'FAQ', content: { heading: 'Frequently asked questions', items: [
+        { question: 'How long do I have access?', answer: 'Lifetime access. Watch at your own pace.' },
+        { question: 'Do I need experience?', answer: 'No, the course starts from the basics.' },
+        { question: 'Is there a refund policy?', answer: 'Yes, 30-day money-back guarantee.' },
+      ] } },
+      { type: 'CTA', content: { headline: 'Ready to start learning?', subtext: 'Join 2,000+ students already enrolled', ctaText: 'Enroll Now' } },
+    ],
+  },
+  {
+    name: 'Product Launch',
+    description: 'Hero, features, gallery, pricing, testimonials, FAQ, CTA',
+    icon: Package,
+    sections: [
+      { type: 'HERO', content: { headline: 'The Ultimate [Product Name]', subheadline: 'Everything you need to [achieve goal]', ctaText: 'Buy Now', ctaSecondary: 'Learn More', emoji: '🚀' } },
+      { type: 'FEATURES', content: { heading: 'What\'s included', subheading: 'Everything in the package', items: [
+        { icon: '📥', title: 'Instant Download', description: 'Get immediate access after purchase' },
+        { icon: '🔄', title: 'Free Updates', description: 'All future updates included free' },
+        { icon: '💎', title: 'Premium Quality', description: 'Professionally designed and tested' },
+      ] } },
+      { type: 'GALLERY', content: { heading: 'See what\'s inside', images: [{ url: '' }, { url: '' }, { url: '' }, { url: '' }] } },
+      { type: 'PRICING', content: { heading: 'Get it now', plans: [
+        { name: 'Standard', price: 49, interval: 'one-time', features: ['Full product', 'Email support'], cta: 'Buy now', highlighted: false },
+        { name: 'Bundle', price: 79, interval: 'one-time', features: ['Full product', 'Bonus templates', 'Priority support', 'Video tutorial'], cta: 'Get bundle', highlighted: true },
+      ] } },
+      { type: 'TESTIMONIALS', content: { heading: 'Loved by creators', items: [
+        { name: 'Emma R.', role: 'Designer', quote: 'Exactly what I needed. Saved me hours of work.' },
+        { name: 'Liam J.', role: 'Entrepreneur', quote: 'Worth every penny. The quality exceeded my expectations.' },
+      ] } },
+      { type: 'CTA', content: { headline: 'Ready to level up?', subtext: 'Instant download. 30-day guarantee.', ctaText: 'Buy Now' } },
+    ],
+  },
+  {
+    name: 'Webinar Registration',
+    description: 'Hero, benefits, speaker info, countdown, FAQ, CTA',
+    icon: Calendar,
+    sections: [
+      { type: 'HERO', content: { headline: 'Free Webinar: [Topic]', subheadline: 'Join us live on [Date] at [Time]', ctaText: 'Save My Seat', ctaSecondary: '', emoji: '🎯' } },
+      { type: 'BENEFITS', content: { heading: 'What you\'ll learn', items: [
+        { title: 'Strategy #1', description: 'The exact framework used by top creators' },
+        { title: 'Live Q&A', description: 'Get your questions answered in real-time' },
+        { title: 'Free Template', description: 'Download our exclusive worksheet' },
+      ] } },
+      { type: 'COUNTDOWN', content: { heading: 'Starts in', endDate: '2025-12-31T18:00:00', ctaText: 'Register Free' } },
+      { type: 'FAQ', content: { heading: 'Questions?', items: [
+        { question: 'Is it really free?', answer: 'Yes! 100% free to attend live.' },
+        { question: 'Will there be a recording?', answer: 'Only for those who register. Sign up to get the replay.' },
+      ] } },
+      { type: 'CTA', content: { headline: 'Don\'t miss out!', subtext: 'Limited to 500 attendees', ctaText: 'Save My Seat' } },
+    ],
+  },
+  {
+    name: 'Membership Sales',
+    description: 'Hero, benefits, pricing, testimonials, FAQ, newsletter',
+    icon: CreditCard,
+    sections: [
+      { type: 'HERO', content: { headline: 'Join the [Community Name]', subheadline: 'Where [audience] connect, learn, and grow together', ctaText: 'Join Now', ctaSecondary: 'Take a Tour', emoji: '👥' } },
+      { type: 'FEATURES', content: { heading: 'What\'s inside', items: [
+        { icon: '💬', title: 'Private Community', description: 'Connect with like-minded creators' },
+        { icon: '📚', title: 'Resource Library', description: 'Templates, guides, and tutorials' },
+        { icon: '🎙️', title: 'Weekly Calls', description: 'Live coaching and Q&A sessions' },
+        { icon: '🏆', title: 'Challenges', description: 'Monthly challenges with prizes' },
+      ] } },
+      { type: 'PRICING', content: { heading: 'Choose your membership', plans: [
+        { name: 'Monthly', price: 29, interval: 'mo', features: ['Full community access', 'Weekly calls', 'Resource library'], cta: 'Join monthly', highlighted: false },
+        { name: 'Annual', price: 290, interval: 'yr', features: ['Everything in Monthly', '2 months free', 'Priority support', 'Exclusive events'], cta: 'Join annually', highlighted: true },
+        { name: 'Lifetime', price: 990, interval: 'once', features: ['Everything in Annual', 'Lifetime access', 'Founder badge'], cta: 'Get lifetime', highlighted: false },
+      ] } },
+      { type: 'TESTIMONIALS', content: { heading: 'Member stories', items: [
+        { name: 'Priya P.', role: 'Member since 2024', quote: 'Best community I\'ve joined. The weekly calls alone are worth 10x the price.' },
+        { name: 'Marcus L.', role: 'Member since 2023', quote: 'The connections I made here led to my first $10K month.' },
+      ] } },
+      { type: 'FAQ', content: { heading: 'Questions', items: [
+        { question: 'Can I cancel anytime?', answer: 'Yes, cancel with one click. No questions asked.' },
+        { question: 'Is there a trial?', answer: 'We offer a 7-day money-back guarantee on all plans.' },
+      ] } },
+      { type: 'NEWSLETTER', content: { heading: 'Not ready yet?', subtext: 'Join our free newsletter for weekly tips', placeholder: 'you@email.com', ctaText: 'Subscribe' } },
+    ],
+  },
+  {
+    name: 'About Page',
+    description: 'Heading, text, features, gallery, CTA',
+    icon: FileText,
+    sections: [
+      { type: 'HEADING', content: { text: 'About [Your Name]', alignment: 'center' } },
+      { type: 'TEXT', content: { text: 'Hi! I\'m [Your Name], a [title] helping [audience] achieve [goal]. With over [X] years of experience, I\'ve helped [number] of people [outcome]. My mission is to [mission statement].' } },
+      { type: 'FEATURES', content: { heading: 'My approach', items: [
+        { icon: '🎯', title: 'Results-Driven', description: 'Focus on actionable strategies that work' },
+        { icon: '❤️', title: 'Community First', description: 'Building genuine connections with every student' },
+        { icon: '📈', title: 'Always Learning', description: 'Constantly updating my knowledge and courses' },
+      ] } },
+      { type: 'GALLERY', content: { heading: 'Behind the scenes', images: [{ url: '' }, { url: '' }, { url: '' }] } },
+      { type: 'CTA', content: { headline: 'Let\'s work together', subtext: 'Check out my courses and community', ctaText: 'View Courses' } },
+    ],
+  },
+  {
+    name: 'Contact Page',
+    description: 'Heading, text, newsletter, CTA, footer',
+    icon: Mail,
+    sections: [
+      { type: 'HEADING', content: { text: 'Get in Touch', alignment: 'center' } },
+      { type: 'TEXT', content: { text: 'Have a question? Want to collaborate? I\'d love to hear from you. Fill out the form below or reach me directly at hello@yoursite.com.' } },
+      { type: 'NEWSLETTER', content: { heading: 'Join my newsletter', subtext: 'Weekly tips on [your topic]. No spam, ever.', placeholder: 'you@email.com', ctaText: 'Subscribe' } },
+      { type: 'CTA', content: { headline: 'Ready to connect?', subtext: 'I typically respond within 24 hours', ctaText: 'Send Message' } },
+      { type: 'FOOTER', content: { brand: 'Your Brand', tagline: 'Helping creators build profitable businesses.', links: [] } },
+    ],
+  },
+]
+
+function TemplatesPanel({ onApply, loading }: { onApply: (template: PageTemplate) => void; loading: boolean }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Start with a prebuilt template. You can customize every section after applying.</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {TEMPLATES.map((tpl) => {
+          const Icon = tpl.icon
+          return (
+            <Card key={tpl.name} className="hover:shadow-md transition cursor-pointer" onClick={() => !loading && onApply(tpl)}>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold">{tpl.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{tpl.description}</p>
+                    <div className="flex items-center gap-1 mt-2">
+                      <Badge variant="secondary" className="text-[10px]">{tpl.sections.length} sections</Badge>
+                    </div>
+                  </div>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+        <strong>Note:</strong> Applying a template will replace all existing sections on this page.
+      </div>
+    </div>
   )
 }
 
