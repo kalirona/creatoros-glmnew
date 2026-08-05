@@ -237,7 +237,7 @@ export function CommunityModule() {
       <div className="space-y-4 min-w-0">
         {view === 'feed' && (
           <FeedView data={data} filtered={filtered} search={search} setSearch={setSearch}
-            setCreateOpen={setCreateOpen} liked={liked} saved={saved} expanded={expanded}
+            setCreateOpen={setCreateOpen} liked={liked} saved={saved} setSaved={setSaved} expanded={expanded}
             toggle={toggle} refetch={refetch} setExpanded={setExpanded} />
         )}
         {view === 'spaces' && (
@@ -303,9 +303,9 @@ export function CommunityModule() {
 
 // ─── Feed View ──────────────────────────────────────────────────────────────
 
-function FeedView({ data, filtered, search, setSearch, setCreateOpen, liked, saved, expanded, toggle, refetch, setExpanded }: {
+function FeedView({ data, filtered, search, setSearch, setCreateOpen, liked, saved, setSaved, expanded, toggle, refetch, setExpanded }: {
   data: CommunityData; filtered: Post[]; search: string; setSearch: (v: string) => void;
-  setCreateOpen: (v: boolean) => void; liked: Set<string>; saved: Set<string>; expanded: Set<string>;
+  setCreateOpen: (v: boolean) => void; liked: Set<string>; saved: Set<string>; setSaved: (s: Set<string>) => void; expanded: Set<string>;
   toggle: (set: Set<string>, setFn: (s: Set<string>) => void, id: string) => void;
   refetch: () => void; setExpanded: (s: Set<string>) => void;
 }) {
@@ -391,9 +391,10 @@ function FeedView({ data, filtered, search, setSearch, setCreateOpen, liked, sav
         const isSaved = saved.has(p.id)
         const isExpanded = expanded.has(p.id)
         const reactions = p.reactions || {}
-        const totalReactions = Object.values(reactions).reduce((sum, r) => {
-          const count = typeof r === 'number' ? r : r?.count || 0
-          return sum + count
+        const totalReactions = Object.values(reactions).reduce<number>((sum, r) => {
+          if (typeof r === 'number') return sum + r
+          if (r && typeof r === 'object' && 'count' in r) return sum + (r.count || 0)
+          return sum
         }, 0)
         return (
           <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
@@ -1376,8 +1377,8 @@ function ModerationQueue() {
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card><CardContent className="p-4"><p className="text-2xl font-bold text-amber-500">{data?.pending || 0}</p><p className="text-xs text-muted-foreground">Pending</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-2xl font-bold">{data?.resolvedToday || 0}</p><p className="text-xs text-muted-foreground">Resolved today</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-2xl font-bold">{data?.dismissedToday || 0}</p><p className="text-xs text-muted-foreground">Dismissed today</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold">{(data as any)?.resolvedToday || 0}</p><p className="text-xs text-muted-foreground">Resolved today</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold">{(data as any)?.dismissedToday || 0}</p><p className="text-xs text-muted-foreground">Dismissed today</p></CardContent></Card>
         <Card><CardContent className="p-4"><p className="text-2xl font-bold">{items.length}</p><p className="text-xs text-muted-foreground">In queue</p></CardContent></Card>
       </div>
       {items.length === 0 ? (

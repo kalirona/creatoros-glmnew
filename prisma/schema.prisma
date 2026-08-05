@@ -14,7 +14,7 @@ model User {
   name          String
   avatarUrl     String?
   bio           String?
-  role          String   @default("OWNER") // global account role
+  role          String   @default("MEMBER") // Global account role: SUPER_ADMIN|MEMBER (workspace roles are on WorkspaceMember)
   credits       Int      @default(500)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -52,6 +52,12 @@ model Workspace {
   communitySpaces CommunitySpace[]
   communityEvents CommunityEvent[]
   invitations   Invitation[]
+  // Back-relations for models that had workspaceId but no relation
+  funnels       Funnel[]
+  blogPosts     BlogPost[]
+  orders        Order[]
+  pageModels    Page[]
+  enrollments   Enrollment[]
 }
 
 model WorkspaceMember {
@@ -98,6 +104,10 @@ model Course {
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   sections     Section[]
   enrollments  Enrollment[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
 }
 
 model Section {
@@ -105,9 +115,13 @@ model Section {
   courseId     String
   title       String
   position    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
   lessons     Lesson[]
 
   course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, position])
 }
 
 model Lesson {
@@ -119,20 +133,32 @@ model Lesson {
   duration    Int      @default(0) // minutes
   position    Int      @default(0)
   isPreview   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId, position])
 }
 
 model Enrollment {
   id          String   @id @default(cuid())
   userId      String
   courseId    String
+  workspaceId String?
   progress    Float    @default(0)
   completed   Boolean  @default(false)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([workspaceId])
 }
 
 model Product {
@@ -149,9 +175,14 @@ model Product {
   rating       Float    @default(0)
   status       String   @default("ACTIVE") // ACTIVE|DRAFT|ARCHIVED
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   orders       Order[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
 }
 
 model Order {
@@ -165,9 +196,17 @@ model Order {
   customerEmail String
   customerName String
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([productId])
 }
 
 model CommunityPost {
@@ -215,6 +254,7 @@ model PostHistory {
 
   post         CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   @@index([postId])
+  @@unique([postId, version])
 }
 
 model CommunityComment {
@@ -237,6 +277,7 @@ model CommunityComment {
 
   @@index([postId, createdAt])
   @@index([parentId])
+  @@index([userId, createdAt])
 }
 
 model CommunitySpace {
@@ -277,12 +318,16 @@ model CommunityEvent {
   maxAttendees Int?
   status       String   @default("SCHEDULED") // SCHEDULED|LIVE|COMPLETED|CANCELLED
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   rsvps        EventRSVP[]
 
   @@index([workspaceId, startTime])
+  @@index([workspaceId, status])
+  @@index([userId, startTime])
+  @@index([spaceId, startTime])
 }
 
 model EventRSVP {
@@ -291,11 +336,13 @@ model EventRSVP {
   userId       String
   status       String   @default("GOING") // GOING|MAYBE|NOT_GOING
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   event        CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model Invitation {
@@ -314,6 +361,7 @@ model Invitation {
   revokedAt     DateTime?
   revokedBy     String?
   createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @default(now()) @updatedAt
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -334,8 +382,10 @@ model Notification {
   entityType   String?
   read         Boolean  @default(false)
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   @@index([userId, read])
+  @@index([userId, createdAt])
   @@index([workspaceId, createdAt])
 }
 
@@ -351,10 +401,12 @@ model ModerationReport {
   resolvedBy   String?
   resolution   String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
   resolvedAt   DateTime?
 
   @@index([workspaceId, status])
   @@index([targetType, targetId])
+  @@index([workspaceId, createdAt])
 }
 
 model BannedKeyword {
@@ -366,7 +418,9 @@ model BannedKeyword {
   severity     String   @default("MEDIUM")
   createdBy    String?
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
+  @@unique([workspaceId, keyword])
   @@index([workspaceId])
 }
 
@@ -384,6 +438,7 @@ model AuditLog {
 
   @@index([workspaceId, createdAt])
   @@index([actorId])
+  @@index([action, createdAt])
 }
 
 model MemberWarning {
@@ -395,8 +450,11 @@ model MemberWarning {
   severity     String   @default("WARNING")
   acknowledged Boolean  @default(false)
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   @@index([workspaceId])
+  @@index([memberId])
+  @@index([issuedBy])
 }
 
 model Customer {
@@ -409,8 +467,13 @@ model Customer {
   ordersCount  Int      @default(0)
   status       String   @default("ACTIVE") // ACTIVE|CHURNED|LEAD
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
 }
 
 model EmailCampaign {
@@ -443,14 +506,20 @@ model Affiliate {
   workspaceId  String
   name         String
   email        String
-  code         String   @unique
+  code         String
   clicks       Int      @default(0)
   conversions  Int      @default(0)
   earnings     Float    @default(0)
-  commissionRate Float  @default(0.3)
+  commissionRate Float  @default(0.3) // 0.3 = 30% (decimal, not percentage)
   status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, code])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
 }
 
 model WebPage {
@@ -462,8 +531,13 @@ model WebPage {
   status       String   @default("PUBLISHED")
   visits       Int      @default(0)
   createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
 }
 
 model MembershipPlan {
@@ -474,8 +548,13 @@ model MembershipPlan {
   interval     String   @default("MONTHLY") // MONTHLY|YEARLY|LIFETIME
   members      Int      @default(0)
   status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
 }
 
 model AiConversation {
@@ -498,6 +577,8 @@ model CreditTransaction {
   createdAt    DateTime @default(now())
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 // ===== AI Platform (database-driven, admin-managed) =====
@@ -524,8 +605,13 @@ model AiModel {
   isDefault    Boolean  @default(false)
   costMultiplier Float  @default(1.0)
   isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now()) @updatedAt
 
   provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+  @@unique([providerId, name])
 }
 
 model AiTool {
@@ -564,6 +650,9 @@ model AiGeneration {
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tool         AiTool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([toolId])
 }
 
 model FeatureFlag {
@@ -572,6 +661,7 @@ model FeatureFlag {
   name        String
   description String   @default("")
   enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
@@ -580,6 +670,7 @@ model AdminSetting {
   key         String   @unique
   value       String   @default("")
   category    String   @default("general") // general | billing | ai | storage | email
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
@@ -605,9 +696,15 @@ model Page {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   sections     PageSection[]
   versions     PageVersion[]
   funnelSteps  FunnelStep[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, createdAt])
 }
 
 model PageSection {
@@ -621,6 +718,8 @@ model PageSection {
   updatedAt   DateTime @updatedAt
 
   page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, position])
 }
 
 model PageVersion {
@@ -632,6 +731,9 @@ model PageVersion {
   createdAt   DateTime @default(now())
 
   page        Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@unique([pageId, version])
 }
 
 model Funnel {
@@ -647,7 +749,11 @@ model Funnel {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   steps        FunnelStep[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, status])
 }
 
 model FunnelStep {
@@ -658,9 +764,13 @@ model FunnelStep {
   type        String   // LANDING | CHECKOUT | UPSELL | DOWNSELL | THANK_YOU | EMAIL | COMMUNITY_INVITE | COURSE_ACCESS
   position    Int      @default(0)
   isRequired  Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
   funnel      Funnel   @relation(fields: [funnelId], references: [id], onDelete: Cascade)
   page        Page?    @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  @@index([funnelId, position])
 }
 
 model BlogPost {
@@ -673,7 +783,7 @@ model BlogPost {
   coverUrl     String   @default("")
   category     String   @default("General")
   tags         String   @default("")
-  author       String   @default("Alex Rivera")
+  author       String   @default("")
   status       String   @default("DRAFT") // DRAFT | PUBLISHED | SCHEDULED
   seoTitle     String   @default("")
   seoDescription String @default("")
@@ -681,6 +791,13 @@ model BlogPost {
   publishedAt  DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
+  @@index([workspaceId, status])
+  @@index([workspaceId, publishedAt])
 }
 
 model SiteSetting {
@@ -688,6 +805,7 @@ model SiteSetting {
   key         String   @unique
   value       String   @default("")
   category    String   @default("brand") // brand | header | footer | analytics | seo | domains
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
