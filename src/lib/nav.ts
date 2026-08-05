@@ -56,10 +56,10 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         id: 'ai-studio', label: 'AI Studio', icon: Sparkles, description: 'Generate courses, copy, and content with AI', badge: 'AI', accent: 'text-primary',
         subItems: [
-          { label: 'AI Chat', moduleId: 'ai-studio' },
-          { label: 'AI Creator', moduleId: 'ai-studio' },
-          { label: 'AI Images', moduleId: 'ai-studio' },
-          { label: 'AI Documents', moduleId: 'ai-studio' },
+          { label: 'AI Chat', moduleId: 'ai-studio', subTab: 'chat' },
+          { label: 'AI Documents', moduleId: 'ai-studio', subTab: 'documents' },
+          { label: 'AI Images', moduleId: 'ai-studio', subTab: 'images' },
+          { label: 'AI Courses', moduleId: 'ai-studio', subTab: 'courses' },
         ],
       },
       {
