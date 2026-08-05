@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Search, CornerDownLeft } from 'lucide-react'
 import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator } from '@/components/ui/command'
 import { useAppStore } from '@/store/app-store'
-import { NAV_GROUPS, KEYBOARD_SHORTCUTS, type ModuleId } from '@/lib/nav'
+import { ALL_NAV_GROUPS, KEYBOARD_SHORTCUTS, type ModuleId } from '@/lib/nav'
 
 export function CommandPalette() {
   const { commandOpen, setCommandOpen, setActiveModule } = useAppStore()
@@ -57,7 +57,7 @@ export function CommandPalette() {
       <CommandInput placeholder="Search modules, create content, run commands..." value={query} onValueChange={setQuery} />
       <CommandList className="scroll-thin">
         <CommandEmpty>No results found.</CommandEmpty>
-        {NAV_GROUPS.map((group) => (
+        {ALL_NAV_GROUPS.map((group) => (
           <CommandGroup key={group.title} heading={group.title}>
             {group.items.map((item) => {
               const Icon = item.icon
