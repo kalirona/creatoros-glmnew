@@ -407,7 +407,6 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
           section={selectedSection ? { id: selectedSection.id, type: selectedSection.type, content: selectedSection.content, position: selectedSection.position } : null}
           onUpdate={(c) => updateSectionContent(selectedSection!.id, c)}
           saving={savingSection === selectedSection?.id}
-          onSaveAndPreview={() => { onOpenPreview() }}
           onAIAction={aiAction}
           aiLoading={busy?.replace(selectedId || '', '') || null}
           renderContentFields={(content, set) => (
