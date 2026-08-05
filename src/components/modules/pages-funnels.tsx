@@ -395,12 +395,42 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
   const moveSection = async (id: string, dir: 'moveUp' | 'moveDown') => { setBusy(id + dir); try { await callApi('/api/data/page-sections', 'PUT', { id, action: dir }); refetch() } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setBusy(null) } }
   const toggleHide = async (s: Section) => { setBusy(s.id); try { await callApi('/api/data/page-sections', 'PUT', { id: s.id, isHidden: !s.isHidden }); refetch() } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setBusy(null) } }
   const deleteSection = async (id: string) => { setBusy(id); try { await callApi(`/api/data/page-sections?id=${id}`, 'DELETE'); toast.success('Section deleted'); refetch() } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setBusy(null) } }
-  const updateSection = async (id: string, content: Record<string, unknown>) => { try { await callApi('/api/data/page-sections', 'PUT', { id, content }); } catch { toast.error('Save failed') } }
   const aiAction = async (s: Section, action: string) => { setBusy(s.id + action); try { const d = await callApi('/api/ai/section-rewrite', 'POST', { action, content: s.content, sectionType: s.type }); const updated = { ...s, content: d.content }; await updateSection(s.id, d.content); toast.success(`AI ${action.toLowerCase()} done! -${d.creditsUsed} credits`); refetch() } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') } finally { setBusy(null) } }
 
   const [showPreview, setShowPreview] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const [seoOpen, setSeoOpen] = useState(false)
+  const [savingSection, setSavingSection] = useState<string | null>(null)
+  const [pendingChanges, setPendingChanges] = useState<Set<string>>(new Set())
+
+  const updateSection = async (id: string, content: Record<string, unknown>) => {
+    setSavingSection(id)
+    setPendingChanges(prev => new Set(prev).add(id))
+    try {
+      await callApi('/api/data/page-sections', 'PUT', { id, content })
+      setPendingChanges(prev => { const n = new Set(prev); n.delete(id); return n })
+      toast.success('Section saved', { duration: 1500 })
+    } catch {
+      toast.error('Save failed')
+    } finally {
+      setSavingSection(null)
+    }
+  }
+
+  const saveAndPreview = async () => {
+    // If there's a selected section being edited, save it first
+    if (selectedSection) {
+      await updateSection(selectedSection.id, selectedSection.content)
+    }
+    // Wait for any pending saves
+    setBusy('save-preview')
+    try {
+      await refetch()
+      setShowPreview(true)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const publish = async () => {
     setBusy('publish')
@@ -478,9 +508,23 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className={cn('text-[10px]', pageData.status === 'PUBLISHED' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{pageData.status}</Badge>
+            {pendingChanges.size > 0 && (
+              <Badge variant="secondary" className="text-[10px] bg-sky-500/10 text-sky-600">
+                {savingSection ? <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" /> : null}
+                {savingSection ? 'Saving...' : `${pendingChanges.size} unsaved`}
+              </Badge>
+            )}
+            {savingSection && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Saving...
+              </span>
+            )}
             <Button size="sm" variant="outline" onClick={() => setShowTemplates(true)}><Layout className="h-3.5 w-3.5 mr-1.5" />Templates</Button>
             <Button size="sm" variant="outline" onClick={() => setSeoOpen(true)}><SearchIcon className="h-3.5 w-3.5 mr-1.5" />SEO</Button>
-            <Button size="sm" variant="outline" onClick={() => setShowPreview(true)}><Eye className="h-3.5 w-3.5 mr-1.5" />Preview</Button>
+            <Button size="sm" variant="outline" onClick={saveAndPreview} disabled={busy === 'save-preview'}>
+              {busy === 'save-preview' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+              Save & Preview
+            </Button>
             {pageData.status === 'PUBLISHED' ? (
               <Button size="sm" variant="outline" onClick={unpublish} disabled={busy === 'unpublish'}>
                 {busy === 'unpublish' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
@@ -562,7 +606,12 @@ function PageEditor({ page, onBack }: { page: { id: string; title: string; slug:
         {/* Right-side settings panel */}
         <div className="lg:sticky lg:top-4 h-fit">
           {selectedSection ? (
-            <SectionSettingsPanel section={selectedSection} onUpdate={(c) => { updateSection(selectedSection.id, c); setSelectedSection({ ...selectedSection, content: c }) }} />
+            <SectionSettingsPanel
+              section={selectedSection}
+              saving={savingSection === selectedSection.id}
+              onSaveAndPreview={saveAndPreview}
+              onUpdate={(c) => { updateSection(selectedSection.id, c); setSelectedSection({ ...selectedSection, content: c }) }}
+            />
           ) : (
             <Card><CardContent className="p-6 text-center"><Pencil className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">Section settings</p><p className="text-xs text-muted-foreground mt-1">Click any section to edit its content, or use AI actions to rewrite it.</p></CardContent></Card>
           )}
@@ -1044,7 +1093,7 @@ function getSectionPreview(s: Section): string {
 }
 
 // ===== Right-side section settings panel =====
-function SectionSettingsPanel({ section, onUpdate }: { section: Section; onUpdate: (c: Record<string, unknown>) => void }) {
+function SectionSettingsPanel({ section, onUpdate, saving, onSaveAndPreview }: { section: Section; onUpdate: (c: Record<string, unknown>) => void; saving: boolean; onSaveAndPreview: () => void }) {
   const meta = SECTION_TYPES.find((t) => t.type === section.type)
   const Icon = meta?.icon || Layout
   const c = section.content
@@ -1056,9 +1105,24 @@ function SectionSettingsPanel({ section, onUpdate }: { section: Section; onUpdat
         <CardTitle className="text-sm flex items-center gap-2"><Icon className="h-4 w-4 text-primary" />{meta?.name} settings</CardTitle>
         <Badge variant="secondary" className="text-[10px]">Section {section.position + 1}</Badge>
       </CardHeader>
-      <CardContent className="space-y-3 max-h-[70vh] overflow-y-auto scroll-thin">
+      <CardContent className="space-y-3 max-h-[60vh] overflow-y-auto scroll-thin">
         <SectionFields type={section.type} content={c} set={set} />
       </CardContent>
+      <div className="border-t p-3 flex items-center gap-2">
+        {saving ? (
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5 flex-1">
+            <Loader2 className="h-3 w-3 animate-spin" /> Saving changes...
+          </span>
+        ) : (
+          <span className="text-xs text-emerald-600 flex items-center gap-1.5 flex-1">
+            <Check className="h-3 w-3" /> Auto-saved
+          </span>
+        )}
+        <Button size="sm" variant="outline" onClick={onSaveAndPreview} disabled={saving}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Eye className="h-3.5 w-3.5 mr-1.5" />}
+          Save & Preview
+        </Button>
+      </div>
     </Card>
   )
 }
