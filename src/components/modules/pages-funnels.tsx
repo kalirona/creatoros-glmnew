@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
+import { LandingEditor } from '@/components/editor/landing-editor'
 
 type SubTab = 'home' | 'pages' | 'landing' | 'navigation' | 'blog' | 'branding' | 'seo' | 'domains'
 
@@ -31,9 +32,33 @@ export function PagesFunnelsModule() {
   const [tab, setTab] = useState<SubTab>('home')
   const [editingPage, setEditingPage] = useState<{ id: string; title: string; slug: string } | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [seoOpen, setSeoOpen] = useState(false)
 
   if (editingPage) {
-    return <PageEditor page={editingPage} onBack={() => setEditingPage(null)} />
+    return (
+      <>
+        <LandingEditor
+          page={editingPage}
+          onBack={() => setEditingPage(null)}
+          onOpenTemplates={() => setShowTemplates(true)}
+          onOpenSEO={() => setSeoOpen(true)}
+          onOpenPreview={() => setShowPreview(true)}
+        />
+        {/* Modals — accessible from the editor via callbacks */}
+        <EditorModals
+          pageId={editingPage.id}
+          showPreview={showPreview}
+          setShowPreview={setShowPreview}
+          showTemplates={showTemplates}
+          setShowTemplates={setShowTemplates}
+          seoOpen={seoOpen}
+          setSeoOpen={setSeoOpen}
+          onTemplatesApplied={() => {/* LandingEditor manages its own state */}}
+        />
+      </>
+    )
   }
   if (generating) {
     return <LandingGenerator onDone={(p) => { setGenerating(false); if (p) setEditingPage(p) }} onCancel={() => setGenerating(false)} />
@@ -71,6 +96,129 @@ export function PagesFunnelsModule() {
         <TabsContent value="domains"><DomainsPanel /></TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+// ===== Editor Modals (Preview, Templates, SEO) — shared between editors =====
+function EditorModals({ pageId, showPreview, setShowPreview, showTemplates, setShowTemplates, seoOpen, setSeoOpen, onTemplatesApplied }: {
+  pageId: string
+  showPreview: boolean
+  setShowPreview: (v: boolean) => void
+  showTemplates: boolean
+  setShowTemplates: (v: boolean) => void
+  seoOpen: boolean
+  setSeoOpen: (v: boolean) => void
+  onTemplatesApplied: () => void
+}) {
+  const { data, refetch } = useApi<{ page: FullPage }>(`/api/data/page-sections?pageId=${pageId}`)
+  const [busy, setBusy] = useState<string | null>(null)
+  const pageData = data?.page
+
+  const callApi = async (url: string, method: string, body?: unknown) => {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    const raw = await res.text()
+    if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+    try { return JSON.parse(raw) } catch { return {} }
+  }
+
+  const publish = async () => {
+    setBusy('publish')
+    try {
+      await callApi('/api/data/pages', 'PUT', { id: pageId, status: 'PUBLISHED' })
+      toast.success('Page published', { description: 'Your changes are now live.' })
+      setShowPreview(false)
+      refetch()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setBusy(null) }
+  }
+
+  const saveSeo = async (seoTitle: string, seoDescription: string) => {
+    setBusy('seo')
+    try {
+      await callApi('/api/data/pages', 'PUT', { id: pageId, seoTitle, seoDescription })
+      toast.success('SEO settings saved')
+      setSeoOpen(false)
+      refetch()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setBusy(null) }
+  }
+
+  const applyTemplate = async (template: { name: string; sections: Array<{ type: string; content: Record<string, unknown> }> }) => {
+    setBusy('template')
+    try {
+      if (pageData) {
+        for (const s of pageData.sections) {
+          await callApi(`/api/data/page-sections?id=${s.id}`, 'DELETE')
+        }
+      }
+      for (let i = 0; i < template.sections.length; i++) {
+        const sec = template.sections[i]
+        await callApi('/api/data/page-sections', 'POST', { pageId, type: sec.type, content: sec.content, position: i })
+      }
+      toast.success(`Template "${template.name}" applied`, { description: `${template.sections.length} sections added.` })
+      setShowTemplates(false)
+      refetch()
+      onTemplatesApplied()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+    finally { setBusy(null) }
+  }
+
+  return (
+    <>
+      {/* Preview Modal */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-4 w-4" /> Preview — {pageData?.title || 'Page'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="rounded-lg border bg-white">
+            {!pageData || pageData.sections.length === 0 ? (
+              <div className="p-12 text-center text-sm text-muted-foreground">No sections to preview. Add sections first.</div>
+            ) : (
+              <div className="divide-y">
+                {pageData.sections.filter(s => !s.isHidden).map((s) => (
+                  <div key={s.id} className="p-6">
+                    <PreviewSection section={s} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPreview(false)}>Close</Button>
+            {pageData && pageData.status !== 'PUBLISHED' && (
+              <Button onClick={publish} disabled={busy === 'publish'}>
+                {busy === 'publish' ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Globe className="h-3.5 w-3.5 mr-1.5" />}
+                Publish now
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* SEO Dialog */}
+      <Dialog open={seoOpen} onOpenChange={setSeoOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>SEO Settings</DialogTitle></DialogHeader>
+          <SeoEditor
+            initialTitle={pageData?.seoTitle || pageData?.title || ''}
+            initialDescription={pageData?.seoDescription || ''}
+            onSave={saveSeo}
+            saving={busy === 'seo'}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Templates Modal */}
+      <Dialog open={showTemplates} onOpenChange={setShowTemplates}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Prebuilt Templates</DialogTitle></DialogHeader>
+          <TemplatesPanel onApply={applyTemplate} loading={busy === 'template'} />
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
