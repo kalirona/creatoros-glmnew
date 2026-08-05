@@ -104,11 +104,11 @@ export const NAV_GROUPS: NavGroup[] = [
       {
         id: 'community', label: 'Community', icon: Users, description: 'Feed, spaces, events, members',
         subItems: [
-          { label: 'Feed', moduleId: 'community' },
-          { label: 'Spaces', moduleId: 'community' },
-          { label: 'Events', moduleId: 'community' },
-          { label: 'Members', moduleId: 'community' },
-          { label: 'Leaderboard', moduleId: 'community' },
+          { label: 'Feed', moduleId: 'community', subTab: 'feed' },
+          { label: 'Spaces', moduleId: 'community', subTab: 'spaces' },
+          { label: 'Events', moduleId: 'community', subTab: 'events' },
+          { label: 'Members', moduleId: 'community', subTab: 'members' },
+          { label: 'Leaderboard', moduleId: 'community', subTab: 'leaderboard' },
         ],
       },
     ],
@@ -121,7 +121,6 @@ export const NAV_GROUPS: NavGroup[] = [
         subItems: [
           { label: 'Campaigns', moduleId: 'email' },
           { label: 'Contacts', moduleId: 'crm' },
-          { label: 'Customers', moduleId: 'crm' },
           { label: 'Affiliates', moduleId: 'affiliates' },
           { label: 'Automations', moduleId: 'automation' },
         ],

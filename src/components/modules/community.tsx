@@ -37,6 +37,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { useAppStore } from '@/store/app-store'
 import { ApiErrorBanner, ModuleEmptyState } from '@/components/modules/_state-utils'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ const ROLES = ['ADMIN', 'MANAGER', 'INSTRUCTOR', 'MODERATOR', 'MEMBER', 'STUDENT
 
 export function CommunityModule() {
   const { data, loading, error, refetch } = useApi<CommunityData>('/api/data/community')
+  const { activeSubTab } = useAppStore()
   const [view, setView] = useState<View>('feed')
   const [activeCat, setActiveCat] = useState('All')
   const [search, setSearch] = useState('')
@@ -143,6 +145,15 @@ export function CommunityModule() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null)
+
+  // Sync view with activeSubTab from sidebar
+  useEffect(() => {
+    if (activeSubTab && ['feed', 'spaces', 'members', 'leaderboard', 'events', 'moderation', 'about'].includes(activeSubTab)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setView(activeSubTab as View)
+      setSelectedSpaceId(null)
+    }
+  }, [activeSubTab])
 
   // Poll unread notifications
   useEffect(() => {

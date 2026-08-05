@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
@@ -60,18 +61,20 @@ export function CoursesModule() {
   const [previewingCourse, setPreviewingCourse] = useState<Course | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const setActiveModule = useAppStore((s) => s.setActiveModule)
-  const openBuilder = useAppStore((s) => s.openBuilder)
+  const { activeSubTab, setActiveModule, openBuilder, createDialogFor, clearCreateDialog } = useAppStore()
 
   // Auto-open create dialog when triggered from topbar
-  const createDialogFor = useAppStore((s) => s.createDialogFor)
-  const clearCreateDialog = useAppStore((s) => s.clearCreateDialog)
   useEffect(() => {
     if (createDialogFor === 'courses') {
       const t = setTimeout(() => { setCreateOpen(true); clearCreateDialog() }, 0)
       return () => clearTimeout(t)
     }
   }, [createDialogFor, clearCreateDialog])
+
+  // If "students" sub-tab is active, show Students view
+  if (activeSubTab === 'students') {
+    return <StudentsView onBack={() => { setActiveModule('courses') }} />
+  }
 
   // If previewing, show the student preview
   if (previewingCourse) {
@@ -584,6 +587,89 @@ function CoursePreview({ course, onBack }: { course: Course; onBack: () => void 
           </CardContent>
         </Card>
       </div>
+    </div>
+  )
+}
+
+// ─── Students View ───────────────────────────────────────────────────────────
+
+function StudentsView({ onBack }: { onBack: () => void }) {
+  const { data, loading, refetch } = useApi<{
+    members: Array<{
+      id: string; userId: string; name: string; email: string; avatarUrl?: string | null;
+      bio?: string | null; role: string; memberStatus: string;
+      joinedAt: string; lastSeenAt: string;
+      postsCount: number; commentsCount: number; likesReceived: number;
+    }>
+    total: number; page: number; pageSize: number; totalPages: number
+  }>('/api/community/members?page=1&pageSize=50&sort=joinedAt&order=desc')
+  const [search, setSearch] = useState('')
+
+  const members = data?.members || []
+  const filtered = members.filter(m =>
+    !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase())
+  )
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Students</h1>
+          <p className="text-sm text-muted-foreground mt-1">All enrolled students across your courses and community.</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Courses</Button>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold">{data?.total || 0}</p><p className="text-xs text-muted-foreground">Total Students</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold text-emerald-500">{filtered.filter(m => m.memberStatus === 'ACTIVE').length}</p><p className="text-xs text-muted-foreground">Active</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold text-amber-500">{filtered.filter(m => m.memberStatus !== 'ACTIVE').length}</p><p className="text-xs text-muted-foreground">Restricted</p></CardContent></Card>
+        <Card><CardContent className="p-4"><p className="text-2xl font-bold text-primary">{filtered.filter(m => Date.now() - new Date(m.lastSeenAt).getTime() < 3600000).length}</p><p className="text-xs text-muted-foreground">Online (1h)</p></CardContent></Card>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search students by name or email..." className="pl-9" />
+      </div>
+
+      {/* Students table */}
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-4 space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">No students found.</div>
+          ) : (
+            <div className="divide-y">
+              {filtered.map((m) => (
+                <div key={m.id} className="flex items-center gap-3 p-4 hover:bg-muted/50 transition">
+                  <Avatar className="h-10 w-10">
+                    {m.avatarUrl ? <img src={m.avatarUrl} alt={m.name} className="h-full w-full rounded-full object-cover" /> : null}
+                    <AvatarFallback className="bg-primary/15 text-primary text-xs font-medium">{m.name.split(' ').map(n => n[0]).join('').slice(0, 2)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate">{m.name}</p>
+                      <Badge variant="outline" className="text-[10px]">{m.role}</Badge>
+                      <Badge variant="outline" className={cn('text-[10px]', m.memberStatus === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{m.memberStatus}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                  </div>
+                  <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="text-right"><p className="font-medium text-foreground">{m.postsCount}</p><p>posts</p></div>
+                    <div className="text-right"><p className="font-medium text-foreground">{m.commentsCount}</p><p>comments</p></div>
+                    <div className="text-right"><p className="font-medium text-foreground">{m.likesReceived}</p><p>likes</p></div>
+                    <div className="text-right"><p className="font-medium text-foreground">{new Date(m.joinedAt).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</p><p>joined</p></div>
+                    <div className="text-right"><p className="font-medium text-foreground">{new Date(m.lastSeenAt).toLocaleDateString('en', { month: 'short', day: 'numeric' })}</p><p>last seen</p></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
