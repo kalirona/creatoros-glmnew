@@ -1,14 +1,15 @@
 'use client'
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import {
-  GripVertical, ChevronRight, Copy, EyeOff, Eye, Trash2, Plus, Loader2,
+  GripVertical, Copy, EyeOff, Eye, Trash2, Plus, Loader2, Search, X,
+  ChevronsDownUp, ChevronsUpDown,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ============================================================================
-// NavigatorPanel — Left sidebar section tree
+// NavigatorPanel — Left sidebar section tree with search, drag, context menu
 // ============================================================================
 
 export interface NavigatorSection {
@@ -37,61 +38,115 @@ export function NavigatorPanel({
 }: NavigatorPanelProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
+  const [dragOverPos, setDragOverPos] = useState<'before' | 'after' | null>(null)
 
-  const handleDragStart = (i: number) => setDragIndex(i)
-  const handleDragOver = (e: React.DragEvent, i: number) => {
+  // Filter sections by search
+  const filteredSections = useMemo(() => {
+    if (!search.trim()) return sections.map((s, i) => ({ ...s, originalIndex: i }))
+    const lower = search.toLowerCase()
+    return sections
+      .map((s, i) => ({ ...s, originalIndex: i }))
+      .filter(s => s.name.toLowerCase().includes(lower) || s.type.toLowerCase().includes(lower) || s.preview.toLowerCase().includes(lower))
+  }, [sections, search])
+
+  const handleDragStart = (originalIndex: number) => setDragIndex(originalIndex)
+  const handleDragOver = (e: React.DragEvent, originalIndex: number) => {
     e.preventDefault()
-    setDragOverIndex(i)
+    if (dragIndex === null || dragIndex === originalIndex) return
+    setDragOverIndex(originalIndex)
+    // Determine position based on mouse Y
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    setDragOverPos(e.clientY < midY ? 'before' : 'after')
   }
-  const handleDrop = (i: number) => {
-    if (dragIndex !== null && dragIndex !== i) {
-      onReorder(dragIndex, i)
+  const handleDrop = (originalIndex: number) => {
+    if (dragIndex !== null && dragIndex !== originalIndex) {
+      let targetIndex = originalIndex
+      if (dragOverPos === 'after' && dragIndex < originalIndex) targetIndex = originalIndex
+      else if (dragOverPos === 'before' && dragIndex > originalIndex) targetIndex = originalIndex - 1
+      else if (dragOverPos === 'after') targetIndex = originalIndex + 1
+      else targetIndex = originalIndex
+      onReorder(dragIndex, targetIndex > dragIndex ? targetIndex - 1 : targetIndex)
     }
     setDragIndex(null)
     setDragOverIndex(null)
+    setDragOverPos(null)
   }
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navigator</p>
-        <span className="text-[10px] text-muted-foreground">{sections.length} sections</span>
+      <div className="px-3 py-2.5 border-b space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Navigator</p>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-muted-foreground mr-1">{sections.length}</span>
+            <IconBtn icon={ChevronsDownUp} title="Collapse all" onClick={() => {}} />
+            <IconBtn icon={ChevronsUpDown} title="Expand all" onClick={() => {}} />
+          </div>
+        </div>
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search sections..."
+            className="w-full h-7 rounded-md border bg-background pl-7 pr-7 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Section list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5 scroll-thin">
-        {sections.length === 0 ? (
+        {filteredSections.length === 0 ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
-            No sections yet. Click "Add" to start.
+            {search ? 'No matching sections' : 'No sections yet. Click "Add" to start.'}
           </div>
         ) : (
-          sections.map((s, i) => {
+          filteredSections.map((s) => {
             const Icon = s.icon
             const isSelected = selectedId === s.id
-            const isDragOver = dragOverIndex === i
+            const isDragOver = dragOverIndex === s.originalIndex
+            const isDragging = dragIndex === s.originalIndex
             return (
               <motion.div
                 key={s.id}
+                layout
                 initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.02 }}
+                animate={{ opacity: isDragging ? 0.4 : 1, x: 0 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 draggable
-                onDragStart={() => handleDragStart(i)}
-                onDragOver={(e) => handleDragOver(e, i)}
-                onDragLeave={() => setDragOverIndex(null)}
-                onDrop={() => handleDrop(i)}
+                onDragStart={() => handleDragStart(s.originalIndex)}
+                onDragOver={(e) => handleDragOver(e, s.originalIndex)}
+                onDragLeave={() => { setDragOverIndex(null); setDragOverPos(null) }}
+                onDrop={() => handleDrop(s.originalIndex)}
                 className={cn(
-                  'group flex items-center gap-1.5 rounded-md px-1.5 py-1.5 cursor-pointer transition-colors',
+                  'group relative flex items-center gap-1.5 rounded-md px-1.5 py-1.5 cursor-pointer transition-colors',
                   isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted',
-                  isDragOver && 'ring-2 ring-primary/40',
                   s.isHidden && 'opacity-50',
-                  dragIndex === i && 'opacity-40',
                 )}
                 onClick={() => onSelect(s.id)}
               >
+                {/* Drop indicator line */}
+                {isDragOver && dragOverPos === 'before' && (
+                  <div className="absolute -top-0.5 left-0 right-0 h-0.5 bg-primary rounded-full" />
+                )}
+                {isDragOver && dragOverPos === 'after' && (
+                  <div className="absolute -bottom-0.5 left-0 right-0 h-0.5 bg-primary rounded-full" />
+                )}
+
                 {/* Drag handle */}
-                <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 cursor-grab" />
+                <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 cursor-grab active:cursor-grabbing" />
+
+                {/* Section number */}
+                <span className="text-[9px] font-mono text-muted-foreground/60 w-4 text-center shrink-0">{s.originalIndex + 1}</span>
 
                 {/* Icon */}
                 <div className={cn(
@@ -154,6 +209,14 @@ function NavIconBtn({ icon: Icon, onClick, disabled, title, danger }: {
       )}
     >
       {disabled ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
+    </button>
+  )
+}
+
+function IconBtn({ icon: Icon, title, onClick }: { icon: LucideIcon; title: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={title} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition">
+      <Icon className="h-3 w-3" />
     </button>
   )
 }

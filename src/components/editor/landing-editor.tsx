@@ -115,8 +115,9 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
     try { return JSON.parse(raw) } catch { return {} }
   }
 
-  // Auto-save section content (debounced via useEffect in parent)
+  // Auto-save section content (debounced)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const updateSectionContent = useCallback((id: string, content: Record<string, unknown>) => {
     // Update local state immediately
     setLocalSections(prev => prev.map(s => s.id === id ? { ...s, content } : s))
@@ -127,6 +128,7 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         await callApi('/api/data/page-sections', 'PUT', { id, content })
+        setLastSavedAt(new Date())
       } catch {
         toast.error('Save failed')
       } finally {
@@ -191,6 +193,7 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
   }
 
   const reorderSection = async (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= localSections.length || toIndex >= localSections.length) return
     // Optimistic reorder
     const reordered = [...localSections]
     const [moved] = reordered.splice(fromIndex, 1)
@@ -199,16 +202,27 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
     skipHistoryRef.current = true
     setLocalSections(reindexed)
 
-    // Save to API
+    // Save to API — use moveUp/moveDown sequentially to reach target
     try {
-      await callApi('/api/data/page-sections', 'PUT', { id: moved.id, action: 'moveUp' })
-      // For simplicity, just refetch to sync positions
-      refetch()
+      const dir = toIndex > fromIndex ? 'moveDown' : 'moveUp'
+      const steps = Math.abs(toIndex - fromIndex)
+      for (let i = 0; i < steps; i++) {
+        await callApi('/api/data/page-sections', 'PUT', { id: moved.id, action: dir })
+      }
     } catch {
       toast.error('Reorder failed')
       setLocalSections(localSections) // rollback
     }
   }
+
+  // Move section up/down (for canvas hover buttons and keyboard)
+  const moveSection = useCallback((id: string, dir: 'up' | 'down') => {
+    const index = localSections.findIndex(s => s.id === id)
+    if (index === -1) return
+    const targetIndex = dir === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= localSections.length) return
+    reorderSection(index, targetIndex)
+  }, [localSections])
 
   const undo = () => {
     if (historyIndex > 0) {
@@ -264,12 +278,32 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo() }
+      // Don't intercept when typing in inputs/contenteditable
+      const target = e.target as HTMLElement
+      const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+
+      // Undo: Ctrl+Z
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+      // Redo: Ctrl+Shift+Z or Ctrl+Y
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return }
+      // Save: Ctrl+S
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); toast.success('All changes saved'); return }
+      // Duplicate: Ctrl+D
+      if ((e.metaKey || e.ctrlKey) && e.key === 'd' && !isTyping && selectedId) { e.preventDefault(); duplicateSection(selectedId); return }
+      // AI Rewrite: Ctrl+/
+      if ((e.metaKey || e.ctrlKey) && e.key === '/' && !isTyping && selectedId) { e.preventDefault(); aiAction('REWRITE'); return }
+      // Delete: Delete/Backspace
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping && selectedId) { e.preventDefault(); deleteSection(selectedId); return }
+      // Arrow keys: move selection
+      if (!isTyping && selectedId) {
+        const currentIndex = localSections.findIndex(s => s.id === selectedId)
+        if (e.key === 'ArrowDown' && currentIndex < localSections.length - 1) { e.preventDefault(); setSelectedId(localSections[currentIndex + 1].id); return }
+        if (e.key === 'ArrowUp' && currentIndex > 0) { e.preventDefault(); setSelectedId(localSections[currentIndex - 1].id); return }
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [historyIndex, history])
+  }, [historyIndex, history, selectedId, localSections])
 
   if (loading || !pageData) return <Skeleton className="h-screen rounded-none" />
 
@@ -392,6 +426,7 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
           onHide={toggleHide}
           onDelete={deleteSection}
           onAI={(id) => { setSelectedId(id); aiAction('REWRITE') }}
+          onMove={moveSection}
           onInlineEdit={handleInlineEdit}
           busy={busy}
           viewport={viewport}
@@ -407,6 +442,7 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
           section={selectedSection ? { id: selectedSection.id, type: selectedSection.type, content: selectedSection.content, position: selectedSection.position } : null}
           onUpdate={(c) => updateSectionContent(selectedSection!.id, c)}
           saving={savingSection === selectedSection?.id}
+          lastSavedAt={lastSavedAt}
           onAIAction={aiAction}
           aiLoading={busy?.replace(selectedId || '', '') || null}
           renderContentFields={(content, set) => (
@@ -422,7 +458,9 @@ export function LandingEditor({ page, onBack, onOpenTemplates, onOpenSEO, onOpen
           <span className="mx-2">·</span>
           <span>{selectedSection ? `Editing: ${selectedSection.type}` : 'No section selected'}</span>
           <ToolbarSpacer />
-          <span className="text-[10px]">⌘Z Undo · ⌘⇧Z Redo</span>
+          <span className="text-[10px] text-muted-foreground">
+            ⌘Z Undo · ⌘⇧Z Redo · ⌘S Save · ⌘D Duplicate · Del Delete · ↑↓ Navigate · ⌘/ AI
+          </span>
         </>
       }
     />

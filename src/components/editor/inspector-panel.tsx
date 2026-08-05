@@ -2,11 +2,8 @@
 import { useState } from 'react'
 import {
   Type, Palette, Search, Settings2, Sparkles, Loader2, Check, Pencil,
-  Eye, Calendar, Code, Hash,
+  ChevronDown, ChevronRight, PenLine, Wand2, Layout, Zap,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,13 +26,14 @@ export interface InspectorPanelProps {
   section: InspectorSection | null
   onUpdate: (content: Record<string, unknown>) => void
   saving: boolean
+  lastSavedAt: Date | null
   onAIAction: (action: string) => void
   aiLoading: string | null
   renderContentFields: (content: Record<string, unknown>, set: (k: string, v: unknown) => void) => React.ReactNode
 }
 
 export function InspectorPanel({
-  section, onUpdate, saving, onAIAction, aiLoading, renderContentFields,
+  section, onUpdate, saving, lastSavedAt, onAIAction, aiLoading, renderContentFields,
 }: InspectorPanelProps) {
   const [tab, setTab] = useState<'content' | 'style' | 'seo' | 'settings'>('content')
 
@@ -59,6 +57,9 @@ export function InspectorPanel({
   const c = section.content
   const set = (k: string, v: unknown) => onUpdate({ ...c, [k]: v })
 
+  // Time-ago for save indicator
+  const savedLabel = saving ? 'Saving...' : lastSavedAt ? `Saved · ${timeAgoShort(lastSavedAt)}` : 'Auto-saved'
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -72,14 +73,13 @@ export function InspectorPanel({
             </span>
           ) : (
             <span className="text-[10px] text-emerald-600 flex items-center gap-1">
-              <Check className="h-2.5 w-2.5" /> Auto-saved
+              <Check className="h-2.5 w-2.5" /> {savedLabel}
             </span>
           )}
-          <Badge variant="secondary" className="text-[9px] h-4 px-1">#{section.position + 1}</Badge>
         </div>
       </div>
 
-      {/* Tabs — fills remaining space */}
+      {/* Tabs */}
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex-1 flex flex-col min-h-0">
         <div className="px-2 pt-2 shrink-0">
           <TabsList className="grid grid-cols-4 w-full h-auto">
@@ -90,53 +90,120 @@ export function InspectorPanel({
           </TabsList>
         </div>
 
-        {/* Tab content — scrollable */}
-        <TabsContent value="content" className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scroll-thin mt-0">
+        <TabsContent value="content" className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scroll-thin mt-0">
           {renderContentFields(c, set)}
         </TabsContent>
 
-        <TabsContent value="style" className="flex-1 overflow-y-auto px-3 py-3 space-y-4 scroll-thin mt-0">
-          <StyleControls content={c} set={set} />
+        <TabsContent value="style" className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scroll-thin mt-0">
+          <CollapsibleGroup label="Layout" icon={Layout} defaultOpen>
+            <StyleLayoutControls content={c} set={set} />
+          </CollapsibleGroup>
+          <CollapsibleGroup label="Appearance" icon={Palette} defaultOpen>
+            <StyleAppearanceControls content={c} set={set} />
+          </CollapsibleGroup>
+          <CollapsibleGroup label="Animation" icon={Zap}>
+            <StyleAnimationControls content={c} set={set} />
+          </CollapsibleGroup>
         </TabsContent>
 
-        <TabsContent value="seo" className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scroll-thin mt-0">
-          <SeoControls content={c} set={set} />
+        <TabsContent value="seo" className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scroll-thin mt-0">
+          <CollapsibleGroup label="Meta Tags" icon={Search} defaultOpen>
+            <SeoMetaControls content={c} set={set} />
+          </CollapsibleGroup>
+          <CollapsibleGroup label="Structured Data" icon={Type}>
+            <SeoSchemaControls content={c} set={set} />
+          </CollapsibleGroup>
         </TabsContent>
 
-        <TabsContent value="settings" className="flex-1 overflow-y-auto px-3 py-3 space-y-3 scroll-thin mt-0">
-          <SettingsControls content={c} set={set} />
+        <TabsContent value="settings" className="flex-1 overflow-y-auto px-3 py-3 space-y-1 scroll-thin mt-0">
+          <CollapsibleGroup label="Section Settings" icon={Settings2} defaultOpen>
+            <SettingsControls content={c} set={set} />
+          </CollapsibleGroup>
         </TabsContent>
       </Tabs>
 
-      {/* AI panel — fixed at bottom */}
-      <div className="border-t shrink-0">
+      {/* AI panel — grouped cards at bottom */}
+      <div className="border-t shrink-0 max-h-[40vh] overflow-y-auto scroll-thin">
         <div className="px-3 py-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
             <Sparkles className="h-3 w-3 text-primary" /> AI Assistant
           </p>
-          <div className="grid grid-cols-2 gap-1.5">
-            <AIButton label="Rewrite" action="REWRITE" onAction={onAIAction} loading={aiLoading === 'REWRITE'} />
-            <AIButton label="Improve" action="IMPROVE" onAction={onAIAction} loading={aiLoading === 'IMPROVE'} />
-            <AIButton label="Shorten" action="SHORTEN" onAction={onAIAction} loading={aiLoading === 'SHORTEN'} />
-            <AIButton label="Expand" action="EXPAND" onAction={onAIAction} loading={aiLoading === 'EXPAND'} />
-            <AIButton label="SEO Optimize" action="SEO" onAction={onAIAction} loading={aiLoading === 'SEO'} />
-            <AIButton label="Translate" action="TRANSLATE" onAction={onAIAction} loading={aiLoading === 'TRANSLATE'} />
-          </div>
-          <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-            <AIButton label="Professional" action="PROFESSIONAL" onAction={onAIAction} loading={aiLoading === 'PROFESSIONAL'} />
-            <AIButton label="Luxury" action="LUXURY" onAction={onAIAction} loading={aiLoading === 'LUXURY'} />
-            <AIButton label="Startup" action="STARTUP" onAction={onAIAction} loading={aiLoading === 'STARTUP'} />
-            <AIButton label="Friendly" action="EMOTIONAL" onAction={onAIAction} loading={aiLoading === 'EMOTIONAL'} />
-          </div>
+
+          {/* Writing group */}
+          <AICard label="Writing" icon={PenLine}>
+            <div className="grid grid-cols-2 gap-1">
+              <AIBtn label="Rewrite" action="REWRITE" onAction={onAIAction} loading={aiLoading === 'REWRITE'} />
+              <AIBtn label="Improve" action="IMPROVE" onAction={onAIAction} loading={aiLoading === 'IMPROVE'} />
+              <AIBtn label="SEO" action="SEO" onAction={onAIAction} loading={aiLoading === 'SEO'} />
+              <AIBtn label="Translate" action="TRANSLATE" onAction={onAIAction} loading={aiLoading === 'TRANSLATE'} />
+            </div>
+          </AICard>
+
+          {/* Style group */}
+          <AICard label="Style" icon={Wand2}>
+            <div className="grid grid-cols-2 gap-1">
+              <AIBtn label="Professional" action="PROFESSIONAL" onAction={onAIAction} loading={aiLoading === 'PROFESSIONAL'} />
+              <AIBtn label="Luxury" action="LUXURY" onAction={onAIAction} loading={aiLoading === 'LUXURY'} />
+              <AIBtn label="Startup" action="STARTUP" onAction={onAIAction} loading={aiLoading === 'STARTUP'} />
+              <AIBtn label="Friendly" action="EMOTIONAL" onAction={onAIAction} loading={aiLoading === 'EMOTIONAL'} />
+            </div>
+          </AICard>
+
+          {/* Content group */}
+          <AICard label="Content" icon={Type}>
+            <div className="grid grid-cols-2 gap-1">
+              <AIBtn label="Shorten" action="SHORTEN" onAction={onAIAction} loading={aiLoading === 'SHORTEN'} />
+              <AIBtn label="Expand" action="EXPAND" onAction={onAIAction} loading={aiLoading === 'EXPAND'} />
+            </div>
+          </AICard>
         </div>
       </div>
     </div>
   )
 }
 
-// ─── AI Button ───────────────────────────────────────────────────────────────
+// ─── Collapsible Group (Figma-style) ─────────────────────────────────────────
 
-function AIButton({ label, action, onAction, loading }: { label: string; action: string; onAction: (a: string) => void; loading: boolean }) {
+function CollapsibleGroup({ label, icon: Icon, defaultOpen = false, children }: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="border-b pb-2 mb-2 last:border-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-center gap-1.5 py-1 text-xs font-semibold uppercase text-muted-foreground hover:text-foreground transition"
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <Icon className="h-3 w-3" />
+        {label}
+      </button>
+      {open && <div className="mt-2 space-y-3">{children}</div>}
+    </div>
+  )
+}
+
+// ─── AI Card ─────────────────────────────────────────────────────────────────
+
+function AICard({ label, icon: Icon, children }: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  children: React.ReactNode
+}) {
+  return (
+    <div className="mb-2.5 last:mb-0">
+      <p className="text-[10px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+        <Icon className="h-2.5 w-2.5" /> {label}
+      </p>
+      {children}
+    </div>
+  )
+}
+
+function AIBtn({ label, action, onAction, loading }: { label: string; action: string; onAction: (a: string) => void; loading: boolean }) {
   return (
     <button
       onClick={() => onAction(action)}
@@ -149,32 +216,14 @@ function AIButton({ label, action, onAction, loading }: { label: string; action:
   )
 }
 
-// ─── Style Controls ──────────────────────────────────────────────────────────
+// ─── Style: Layout Controls ──────────────────────────────────────────────────
 
-function StyleControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
-  const bg = (content.background as Record<string, unknown> | undefined) || {}
+function StyleLayoutControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
   const spacing = (content.spacing as Record<string, unknown> | undefined) || {}
-  const animation = (content.animation as string | undefined) || 'none'
   const alignment = (content.alignment as string | undefined) || 'center'
-  const borderRadius = (content.borderRadius as string | undefined) || 'md'
 
   return (
     <>
-      {/* Background */}
-      <div>
-        <Label className="text-xs font-medium uppercase text-muted-foreground">Background</Label>
-        <div className="mt-1.5 grid grid-cols-4 gap-1">
-          {['none', 'color', 'gradient', 'image'].map((bgType) => (
-            <button key={bgType} onClick={() => set('background', { ...bg, type: bgType })}
-              className={cn('rounded-md border px-1 py-1.5 text-[10px] font-medium capitalize transition',
-                bg.type === bgType ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}>
-              {bgType}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Spacing */}
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Padding (vertical)</Label>
         <div className="mt-1.5 grid grid-cols-4 gap-1">
@@ -187,8 +236,6 @@ function StyleControls({ content, set }: { content: Record<string, unknown>; set
           ))}
         </div>
       </div>
-
-      {/* Alignment */}
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Alignment</Label>
         <div className="mt-1.5 grid grid-cols-3 gap-1">
@@ -201,8 +248,30 @@ function StyleControls({ content, set }: { content: Record<string, unknown>; set
           ))}
         </div>
       </div>
+    </>
+  )
+}
 
-      {/* Border Radius */}
+// ─── Style: Appearance Controls ──────────────────────────────────────────────
+
+function StyleAppearanceControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+  const bg = (content.background as Record<string, unknown> | undefined) || {}
+  const borderRadius = (content.borderRadius as string | undefined) || 'md'
+
+  return (
+    <>
+      <div>
+        <Label className="text-xs font-medium uppercase text-muted-foreground">Background</Label>
+        <div className="mt-1.5 grid grid-cols-4 gap-1">
+          {['none', 'color', 'gradient', 'image'].map((bgType) => (
+            <button key={bgType} onClick={() => set('background', { ...bg, type: bgType })}
+              className={cn('rounded-md border px-1 py-1.5 text-[10px] font-medium capitalize transition',
+                bg.type === bgType ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}>
+              {bgType}
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Border Radius</Label>
         <div className="mt-1.5 grid grid-cols-4 gap-1">
@@ -215,32 +284,14 @@ function StyleControls({ content, set }: { content: Record<string, unknown>; set
           ))}
         </div>
       </div>
-
-      {/* Animation */}
-      <div>
-        <Label className="text-xs font-medium uppercase text-muted-foreground">Animation</Label>
-        <select value={animation} onChange={(e) => set('animation', e.target.value)}
-          className="mt-1.5 w-full rounded-md border bg-background px-3 py-2 text-sm">
-          <option value="none">None</option>
-          <option value="fade-in">Fade In</option>
-          <option value="fade-in-up">Fade In Up</option>
-          <option value="slide-in">Slide In</option>
-          <option value="zoom-in">Zoom In</option>
-        </select>
-      </div>
-
-      {/* Visibility */}
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Device Visibility</Label>
-        <p className="text-[10px] text-muted-foreground mt-0.5 mb-2">Show section on specific devices</p>
-        <div className="space-y-2">
+        <div className="mt-2 space-y-2">
           {['desktop', 'tablet', 'mobile'].map((device) => {
             const visibility = (content.visibility as Record<string, boolean> | undefined) || { desktop: true, tablet: true, mobile: true }
             return (
               <div key={device} className="flex items-center justify-between">
-                <span className="text-xs capitalize flex items-center gap-1.5">
-                  <Eye className="h-3 w-3 text-muted-foreground" /> {device}
-                </span>
+                <span className="text-xs capitalize">{device}</span>
                 <Switch checked={visibility[device] !== false} onCheckedChange={(checked) => set('visibility', { ...visibility, [device]: checked })} />
               </div>
             )
@@ -251,11 +302,28 @@ function StyleControls({ content, set }: { content: Record<string, unknown>; set
   )
 }
 
-// ─── SEO Controls ────────────────────────────────────────────────────────────
+// ─── Style: Animation Controls ───────────────────────────────────────────────
 
-function SeoControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
-  const headingTag = (content.headingTag as string | undefined) || 'h2'
-  const schemaType = (content.schemaType as string | undefined) || 'none'
+function StyleAnimationControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+  const animation = (content.animation as string | undefined) || 'none'
+  return (
+    <div>
+      <Label className="text-xs font-medium uppercase text-muted-foreground">Entrance Animation</Label>
+      <select value={animation} onChange={(e) => set('animation', e.target.value)}
+        className="mt-1.5 w-full rounded-md border bg-background px-3 py-2 text-sm">
+        <option value="none">None</option>
+        <option value="fade-in">Fade In</option>
+        <option value="fade-in-up">Fade In Up</option>
+        <option value="slide-in">Slide In</option>
+        <option value="zoom-in">Zoom In</option>
+      </select>
+    </div>
+  )
+}
+
+// ─── SEO: Meta Controls ──────────────────────────────────────────────────────
+
+function SeoMetaControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
   const seoTitle = (content.seoTitle as string | undefined) || ''
   const seoDescription = (content.seoDescription as string | undefined) || ''
   const keywords = (content.seoKeywords as string | undefined) || ''
@@ -265,26 +333,33 @@ function SeoControls({ content, set }: { content: Record<string, unknown>; set: 
     <>
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">SEO Title</Label>
-        <p className="text-[10px] text-muted-foreground mt-0.5">Override the section heading for search engines</p>
         <Input className="mt-1.5 h-8 text-sm" value={seoTitle} onChange={(e) => set('seoTitle', e.target.value)} placeholder="Auto from heading" />
       </div>
-
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Meta Description</Label>
         <Textarea className="mt-1.5 text-sm" rows={2} value={seoDescription} onChange={(e) => set('seoDescription', e.target.value)} placeholder="Brief description for search results" />
         <p className="text-[10px] text-muted-foreground mt-0.5">{seoDescription.length}/160 characters</p>
       </div>
-
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Keywords</Label>
         <Input className="mt-1.5 h-8 text-sm" value={keywords} onChange={(e) => set('seoKeywords', e.target.value)} placeholder="comma, separated, keywords" />
       </div>
-
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">OG Image URL</Label>
         <Input className="mt-1.5 h-8 text-sm" value={ogImage} onChange={(e) => set('ogImage', e.target.value)} placeholder="/api/media/og.jpg" />
       </div>
+    </>
+  )
+}
 
+// ─── SEO: Schema Controls ────────────────────────────────────────────────────
+
+function SeoSchemaControls({ content, set }: { content: Record<string, unknown>; set: (k: string, v: unknown) => void }) {
+  const headingTag = (content.headingTag as string | undefined) || 'h2'
+  const schemaType = (content.schemaType as string | undefined) || 'none'
+
+  return (
+    <>
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Heading Tag</Label>
         <select value={headingTag} onChange={(e) => set('headingTag', e.target.value)}
@@ -295,10 +370,8 @@ function SeoControls({ content, set }: { content: Record<string, unknown>; set: 
           <option value="h4">H4 (minor heading)</option>
         </select>
       </div>
-
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Schema Type</Label>
-        <p className="text-[10px] text-muted-foreground mt-0.5">Structured data for rich snippets</p>
         <select value={schemaType} onChange={(e) => set('schemaType', e.target.value)}
           className="mt-1.5 w-full rounded-md border bg-background px-3 py-2 text-sm">
           <option value="none">None</option>
@@ -309,7 +382,6 @@ function SeoControls({ content, set }: { content: Record<string, unknown>; set: 
           <option value="Organization">Organization</option>
         </select>
       </div>
-
       <div className="rounded-lg border bg-muted/30 p-3 text-xs">
         <p className="font-medium text-muted-foreground mb-1">SEO Tips</p>
         <ul className="space-y-1 text-muted-foreground">
@@ -334,29 +406,17 @@ function SettingsControls({ content, set }: { content: Record<string, unknown>; 
 
   return (
     <>
-      {/* Anchor ID */}
       <div>
-        <Label className="text-xs font-medium uppercase text-muted-foreground flex items-center gap-1.5">
-          <Hash className="h-3 w-3" /> Anchor ID
-        </Label>
+        <Label className="text-xs font-medium uppercase text-muted-foreground">Anchor ID</Label>
         <p className="text-[10px] text-muted-foreground mt-0.5">For deep links: /page#your-id</p>
         <Input className="mt-1.5 h-8 text-sm font-mono" value={anchorId} onChange={(e) => set('anchorId', e.target.value)} placeholder="pricing-section" />
       </div>
-
-      {/* Custom CSS Class */}
       <div>
-        <Label className="text-xs font-medium uppercase text-muted-foreground flex items-center gap-1.5">
-          <Code className="h-3 w-3" /> Custom CSS Class
-        </Label>
-        <p className="text-[10px] text-muted-foreground mt-0.5">Additional class name on the section wrapper</p>
+        <Label className="text-xs font-medium uppercase text-muted-foreground">Custom CSS Class</Label>
         <Input className="mt-1.5 h-8 text-sm font-mono" value={customCssClass} onChange={(e) => set('customCssClass', e.target.value)} placeholder="my-custom-class" />
       </div>
-
-      {/* Schedule */}
       <div>
-        <Label className="text-xs font-medium uppercase text-muted-foreground flex items-center gap-1.5">
-          <Calendar className="h-3 w-3" /> Schedule Visibility
-        </Label>
+        <Label className="text-xs font-medium uppercase text-muted-foreground">Schedule Visibility</Label>
         <p className="text-[10px] text-muted-foreground mt-0.5 mb-2">Show section only during this time range</p>
         <div className="space-y-2">
           <div>
@@ -369,13 +429,23 @@ function SettingsControls({ content, set }: { content: Record<string, unknown>; 
           </div>
         </div>
       </div>
-
-      {/* Tracking */}
       <div>
         <Label className="text-xs font-medium uppercase text-muted-foreground">Tracking ID</Label>
-        <p className="text-[10px] text-muted-foreground mt-0.5">For analytics events (e.g., GA4 event name)</p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">For analytics events</p>
         <Input className="mt-1.5 h-8 text-sm font-mono" value={trackingId} onChange={(e) => set('trackingId', e.target.value)} placeholder="cta_hero_click" />
       </div>
     </>
   )
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function timeAgoShort(date: Date): string {
+  const diff = Date.now() - date.getTime()
+  const secs = Math.floor(diff / 1000)
+  if (secs < 5) return 'just now'
+  if (secs < 60) return `${secs}s ago`
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m ago`
+  return `${Math.floor(mins / 60)}h ago`
 }
