@@ -5,7 +5,19 @@ export const dynamic = 'force-dynamic'
 
 const ALLOWED_MODALITIES = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT', 'TTS']
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function safeJsonParse<T>(s: string | null | undefined, fallback: T): T {
+  if (!s) return fallback
+  try {
+    return JSON.parse(s) as T
+  } catch {
+    return fallback
+  }
+}
+
 // ─── GET — list all models with provider info; supports filters ────────────
+// Returns the new capability flags (supportsVision, supportsImage, …) and
+// parses providerTags from its stored JSON string into a string[].
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -22,7 +34,12 @@ export async function GET(req: NextRequest) {
       orderBy: [{ providerId: 'asc' }, { modality: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ models })
+    const result = models.map((m) => ({
+      ...m,
+      providerTags: safeJsonParse<string[]>(m.providerTags, []),
+    }))
+
+    return NextResponse.json({ models: result })
   } catch (e) {
     console.error('[admin/models GET]', e)
     return NextResponse.json({ error: 'Failed to load models' }, { status: 500 })
@@ -30,12 +47,19 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST — create a new model on a provider ──────────────────────────────
+// Supports all standard fields plus contextWindow + the capability flags.
+// Models created manually here are flagged isCustomPricing=true if the caller
+// supplies pricing (so future syncs won't overwrite it).
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const {
       providerId, name, displayName, modality,
       isDefault, costMultiplier, inputCostPer1k, outputCostPer1k, isActive,
+      contextWindow,
+      supportsVision, supportsImage, supportsAudio, supportsVideo,
+      supportsEmbeddings, supportsStreaming, supportsJson,
+      supportsToolCalling, supportsReasoning, providerTags,
     } = body as Record<string, unknown>
 
     if (!providerId || typeof providerId !== 'string') {
@@ -57,6 +81,17 @@ export async function POST(req: NextRequest) {
     const provider = await db.aiProvider.findUnique({ where: { id: providerId } })
     if (!provider) return NextResponse.json({ error: 'Provider not found' }, { status: 404 })
 
+    // Enforce unique [providerId, name]
+    const existing = await db.aiModel.findUnique({
+      where: { providerId_name: { providerId, name } },
+    })
+    if (existing) {
+      return NextResponse.json(
+        { error: `Model '${name}' already exists on this provider` },
+        { status: 400 }
+      )
+    }
+
     // If isDefault=true, unset isDefault on other models of the same provider first
     if (isDefault) {
       await db.aiModel.updateMany({
@@ -64,6 +99,23 @@ export async function POST(req: NextRequest) {
         data: { isDefault: false },
       })
     }
+
+    // Coerce providerTags to a JSON string for storage
+    let providerTagsStr = '[]'
+    if (providerTags !== undefined) {
+      if (typeof providerTags === 'string') {
+        try { JSON.parse(providerTags); providerTagsStr = providerTags } catch {
+          return NextResponse.json({ error: 'providerTags must be valid JSON' }, { status: 400 })
+        }
+      } else if (Array.isArray(providerTags)) {
+        providerTagsStr = JSON.stringify(providerTags)
+      }
+    }
+
+    // Manual pricing → mark as custom so future syncs won't overwrite
+    const hasCustomPricing =
+      (inputCostPer1k !== undefined && Number(inputCostPer1k) > 0) ||
+      (outputCostPer1k !== undefined && Number(outputCostPer1k) > 0)
 
     const model = await db.aiModel.create({
       data: {
@@ -75,14 +127,34 @@ export async function POST(req: NextRequest) {
         costMultiplier: costMultiplier !== undefined ? Number(costMultiplier) : 1.0,
         inputCostPer1k: inputCostPer1k !== undefined ? Number(inputCostPer1k) : 0,
         outputCostPer1k: outputCostPer1k !== undefined ? Number(outputCostPer1k) : 0,
+        contextWindow: contextWindow !== undefined ? Number(contextWindow) : 128000,
         isActive: isActive !== undefined ? !!isActive : true,
+        // Capability flags
+        supportsVision: !!supportsVision,
+        supportsImage: !!supportsImage,
+        supportsAudio: !!supportsAudio,
+        supportsVideo: !!supportsVideo,
+        supportsEmbeddings: !!supportsEmbeddings,
+        supportsStreaming: supportsStreaming !== undefined ? !!supportsStreaming : true,
+        supportsJson: !!supportsJson,
+        supportsToolCalling: !!supportsToolCalling,
+        supportsReasoning: !!supportsReasoning,
+        providerTags: providerTagsStr,
+        isCustomPricing: hasCustomPricing,
+        lastSyncedAt: new Date(),
       },
       include: { provider: { select: { id: true, name: true, slug: true } } },
     })
 
     invalidateRouteCache()
 
-    return NextResponse.json({ success: true, model })
+    return NextResponse.json({
+      success: true,
+      model: {
+        ...model,
+        providerTags: safeJsonParse<string[]>(model.providerTags, []),
+      },
+    })
   } catch (e) {
     console.error('[admin/models POST]', e)
     return NextResponse.json({ error: 'Failed to create model' }, { status: 500 })
@@ -90,12 +162,19 @@ export async function POST(req: NextRequest) {
 }
 
 // ─── PUT — update a model ─────────────────────────────────────────────────
+// Supports updating: inputCostPer1k, outputCostPer1k (sets isCustomPricing=true
+// when changed), isActive, isDefault, displayName, contextWindow, costMultiplier,
+// and all capability flags.
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json()
     const {
       id, providerId, name, displayName, modality,
       isDefault, costMultiplier, inputCostPer1k, outputCostPer1k, isActive,
+      contextWindow,
+      supportsVision, supportsImage, supportsAudio, supportsVideo,
+      supportsEmbeddings, supportsStreaming, supportsJson,
+      supportsToolCalling, supportsReasoning, providerTags,
     } = body as Record<string, unknown>
 
     if (!id || typeof id !== 'string') {
@@ -123,6 +202,38 @@ export async function PUT(req: NextRequest) {
     if (inputCostPer1k !== undefined) data.inputCostPer1k = Number(inputCostPer1k)
     if (outputCostPer1k !== undefined) data.outputCostPer1k = Number(outputCostPer1k)
     if (isActive !== undefined) data.isActive = !!isActive
+    if (contextWindow !== undefined) data.contextWindow = Number(contextWindow)
+
+    // Capability flags
+    if (supportsVision !== undefined) data.supportsVision = !!supportsVision
+    if (supportsImage !== undefined) data.supportsImage = !!supportsImage
+    if (supportsAudio !== undefined) data.supportsAudio = !!supportsAudio
+    if (supportsVideo !== undefined) data.supportsVideo = !!supportsVideo
+    if (supportsEmbeddings !== undefined) data.supportsEmbeddings = !!supportsEmbeddings
+    if (supportsStreaming !== undefined) data.supportsStreaming = !!supportsStreaming
+    if (supportsJson !== undefined) data.supportsJson = !!supportsJson
+    if (supportsToolCalling !== undefined) data.supportsToolCalling = !!supportsToolCalling
+    if (supportsReasoning !== undefined) data.supportsReasoning = !!supportsReasoning
+
+    // providerTags — accept array or JSON string
+    if (providerTags !== undefined) {
+      if (typeof providerTags === 'string') {
+        try { JSON.parse(providerTags); data.providerTags = providerTags } catch {
+          return NextResponse.json({ error: 'providerTags must be valid JSON' }, { status: 400 })
+        }
+      } else if (Array.isArray(providerTags)) {
+        data.providerTags = JSON.stringify(providerTags)
+      }
+    }
+
+    // If pricing was manually changed, mark as custom pricing so future syncs
+    // won't overwrite the admin's override.
+    const pricingChanged =
+      (inputCostPer1k !== undefined && Number(inputCostPer1k) !== existing.inputCostPer1k) ||
+      (outputCostPer1k !== undefined && Number(outputCostPer1k) !== existing.outputCostPer1k)
+    if (pricingChanged) {
+      data.isCustomPricing = true
+    }
 
     // If isDefault=true, unset isDefault on other models of the same provider
     if (isDefault) {
@@ -140,7 +251,13 @@ export async function PUT(req: NextRequest) {
 
     invalidateRouteCache()
 
-    return NextResponse.json({ success: true, model })
+    return NextResponse.json({
+      success: true,
+      model: {
+        ...model,
+        providerTags: safeJsonParse<string[]>(model.providerTags, []),
+      },
+    })
   } catch (e) {
     console.error('[admin/models PUT]', e)
     return NextResponse.json({ error: 'Failed to update model' }, { status: 500 })

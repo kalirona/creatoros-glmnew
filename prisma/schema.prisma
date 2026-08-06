@@ -587,15 +587,19 @@ model AiProvider {
   id              String   @id @default(cuid())
   name            String   @unique
   slug            String   @unique
-  // Capabilities — what this provider can do (TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS)
+  // Capabilities — what this provider can do (TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS | VISION | OCR | RERANKER | MODERATION)
   capabilities    String   @default("TEXT") // comma-separated
   apiKey          String   @default("")
   baseUrl         String   @default("")
   webhookSecret   String   @default("")
+  // Auth — for custom OpenAI-compatible endpoints
+  authType        String   @default("bearer") // bearer | x-api-key | custom-header | query-param
+  headers         String   @default("{}") // JSON: custom headers
+  // State
   isActive        Boolean  @default(true)
   isHealthy       Boolean  @default(true)
   priority        Int      @default(10)
-  // Budgets (USD cents)
+  // Budgets (USD)
   dailyBudget     Float    @default(100)
   monthlyBudget   Float    @default(2000)
   // Limits
@@ -608,7 +612,15 @@ model AiProvider {
   // Metadata
   description     String   @default("")
   docsUrl         String   @default("")
+  logoUrl         String   @default("")
+  providerVersion String   @default("")
+  // Health & quota
   lastHealthCheck DateTime?
+  lastSyncAt      DateTime?
+  quotaRemaining  String   @default("") // provider-specific quota info
+  latencyMs       Int      @default(0) // last measured latency
+  // Routing strategy — what creators choose (Fast | Balanced | Best | Creative | Reasoning)
+  defaultStrategy String   @default("balanced") // fast | balanced | best | creative | reasoning
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   // Relations
@@ -620,6 +632,8 @@ model AiProvider {
   logs            AiLog[]
   costs           AiCost[]
   webhooks        AiWebhook[]
+  healthChecks    AiProviderHealth[]
+  syncHistory     AiProviderSyncHistory[]
 }
 
 model AiModel {
@@ -627,15 +641,29 @@ model AiModel {
   providerId   String
   name         String   // internal id (e.g. deepseek/deepseek-chat)
   displayName  String   // what shows in admin (creators never see this)
-  modality     String   @default("TEXT") // TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS
+  modality     String   @default("TEXT") // TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS | VISION
   contextWindow Int     @default(128000)
   isDefault    Boolean  @default(false)
   costMultiplier Float  @default(1.0)
   inputCostPer1k  Float @default(0)   // USD per 1k input tokens (admin only)
   outputCostPer1k Float @default(0)   // USD per 1k output tokens (admin only)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @default(now()) @updatedAt
+  // Capability flags — auto-discovered from provider API where possible
+  supportsVision      Boolean @default(false)
+  supportsImage       Boolean @default(false) // can generate images
+  supportsAudio       Boolean @default(false)
+  supportsVideo       Boolean @default(false)
+  supportsEmbeddings  Boolean @default(false)
+  supportsStreaming   Boolean @default(true)
+  supportsJson        Boolean @default(false) // JSON mode
+  supportsToolCalling Boolean @default(false) // tool use / function calling
+  supportsReasoning   Boolean @default(false) // thinking / chain-of-thought
+  // Sync metadata
+  providerTags  String   @default("[]") // JSON array of tags from provider
+  isCustomPricing Boolean @default(false) // admin overrode pricing
+  lastSyncedAt  DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
@@ -996,6 +1024,51 @@ model AiRateLimit {
 
   @@unique([workspaceId, userId, routeCategory, minuteWindow])
   @@index([workspaceId, hourWindow])
+}
+
+// ===== AI Provider Health — history of health checks =====
+model AiProviderHealth {
+  id           String   @id @default(cuid())
+  providerId   String
+  // Check result
+  status       String   // healthy | degraded | down
+  latencyMs    Int      @default(0)
+  errorCode    String   @default("")
+  errorMessage String   @default("")
+  // Details
+  checkedAt    DateTime @default(now())
+  // Tests run
+  testsRun     String   @default("[]") // JSON: ["health","prompt","streaming","tool"]
+  testsPassed  String   @default("[]") // JSON: ["health","prompt"]
+  // Metadata captured
+  providerVersion String @default("")
+  quotaRemaining  String @default("")
+  modelCount      Int    @default(0)
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, checkedAt])
+}
+
+// ===== AI Provider Sync History — model discovery logs =====
+model AiProviderSyncHistory {
+  id           String   @id @default(cuid())
+  providerId   String
+  // Sync result
+  status       String   // success | partial | failed
+  modelsFound  Int      @default(0)
+  modelsAdded  Int      @default(0)
+  modelsUpdated Int     @default(0)
+  modelsRemoved Int     @default(0)
+  modelsKept   Int      @default(0)
+  // Details
+  errorMessage String   @default("")
+  syncedAt     DateTime @default(now())
+  durationMs   Int      @default(0)
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, syncedAt])
 }
 
 model FeatureFlag {

@@ -1,0 +1,364 @@
+     1→// ============================================================================
+     2→// Provider Gateway — Discovery & Validation
+     3→// ----------------------------------------------------------------------------
+     4→// Validates API keys against provider APIs and discovers available models.
+     5→// In the sandbox we can't make real outbound calls to OpenRouter/Fal AI/etc.,
+     6→// so we use a curated catalog per provider. When real keys are available,
+     7→// these functions make actual HTTP calls to the provider's /models endpoint.
+     8→// ============================================================================
+     9→
+    10→import { db } from '@/lib/db'
+    11→import { maskApiKey } from './types'
+    12→import type { DiscoveredModel, ProviderSlug, ValidationResult, SyncResult } from './types'
+    13→
+    14→// ─── Catalog of known models per provider ───────────────────────────────────
+    15→// Used as a fallback when the provider API can't be reached (e.g. sandbox).
+    16→// In production with real keys, we fetch live from the provider's /models.
+    17→
+    18→const MODEL_CATALOG: Record<ProviderSlug, DiscoveredModel[]> = {
+    19→  openrouter: [
+    20→    { id: 'deepseek/deepseek-chat', name: 'DeepSeek Chat', contextWindow: 64000, modality: 'TEXT', inputCostPer1k: 0.00014, outputCostPer1k: 0.00028, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['chat', 'cheap'] },
+    21→    { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', contextWindow: 64000, modality: 'TEXT', inputCostPer1k: 0.00055, outputCostPer1k: 0.00219, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: true, tags: ['reasoning', 'thinking'] },
+    22→    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', contextWindow: 200000, modality: 'TEXT', inputCostPer1k: 0.003, outputCostPer1k: 0.015, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'premium'] },
+    23→    { id: 'openai/gpt-4o', name: 'GPT-4o', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.005, outputCostPer1k: 0.015, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'premium'] },
+    24→    { id: 'openai/gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00015, outputCostPer1k: 0.0006, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'cheap'] },
+    25→    { id: 'google/gemini-flash-1.5', name: 'Gemini Flash 1.5', contextWindow: 1000000, modality: 'TEXT', inputCostPer1k: 0.000075, outputCostPer1k: 0.0003, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'cheap', 'long-context'] },
+    26→    { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', contextWindow: 2000000, modality: 'TEXT', inputCostPer1k: 0.00125, outputCostPer1k: 0.005, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'long-context'] },
+    27→    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00086, outputCostPer1k: 0.00086, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: true, supportsReasoning: false, tags: ['open-source'] },
+    28→    { id: 'qwen/qwen-2.5-72b-instruct', name: 'Qwen 2.5 72B', contextWindow: 32000, modality: 'TEXT', inputCostPer1k: 0.00023, outputCostPer1k: 0.00023, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['open-source'] },
+    29→    { id: 'mistralai/mistral-large', name: 'Mistral Large', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.002, outputCostPer1k: 0.006, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['premium'] },
+    30→  ],
+    31→  'fal-ai': [
+    32→    { id: 'fal-ai/flux-pro', name: 'Flux Pro', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.05, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'premium'] },
+    33→    { id: 'fal-ai/flux-dev', name: 'Flux Dev', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.03, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'cheap'] },
+    34→    { id: 'fal-ai/flux/schnell', name: 'Flux Schnell', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.02, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'fast'] },
+    35→    { id: 'fal-ai/kling-video', name: 'Kling Video', contextWindow: 0, modality: 'VIDEO', inputCostPer1k: 0.5, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: true, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['video'] },
+    36→    { id: 'fal-ai/sdxl', name: 'SDXL', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.02, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'open-source'] },
+    37→    { id: 'fal-ai/fast-sdxl', name: 'Fast SDXL', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.015, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'fast'] },
+    38→    { id: 'fal-ai/real-esrgan', name: 'Real ESRGAN (Upscale)', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.01, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'upscale'] },
+    39→    { id: 'fal-ai/birefnet', name: 'BiRefNet (BG Remove)', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.005, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'bg-remove'] },
+    40→  ],
+    41→  openai: [
+    42→    { id: 'gpt-4o', name: 'GPT-4o', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.005, outputCostPer1k: 0.015, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'premium'] },
+    43→    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00015, outputCostPer1k: 0.0006, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'cheap'] },
+    44→    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.01, outputCostPer1k: 0.03, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'premium'] },
+    45→    { id: 'dall-e-3', name: 'DALL·E 3', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.04, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image'] },
+    46→    { id: 'text-embedding-3-small', name: 'Embedding 3 Small', contextWindow: 8191, modality: 'EMBEDDING', inputCostPer1k: 0.00002, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: true, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['embedding', 'cheap'] },
+    47→    { id: 'text-embedding-3-large', name: 'Embedding 3 Large', contextWindow: 8191, modality: 'EMBEDDING', inputCostPer1k: 0.00013, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: true, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['embedding'] },
+    48→    { id: 'whisper-1', name: 'Whisper', contextWindow: 0, modality: 'STT', inputCostPer1k: 0.006, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['stt'] },
+    49→    { id: 'tts-1', name: 'TTS-1', contextWindow: 0, modality: 'TTS', inputCostPer1k: 0.005, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['tts'] },
+    50→  ],
+    51→  anthropic: [
+    52→    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', contextWindow: 200000, modality: 'TEXT', inputCostPer1k: 0.003, outputCostPer1k: 0.015, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: true, tags: ['vision', 'reasoning', 'premium'] },
+    53→    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', contextWindow: 200000, modality: 'TEXT', inputCostPer1k: 0.0008, outputCostPer1k: 0.004, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'fast'] },
+    54→    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus', contextWindow: 200000, modality: 'TEXT', inputCostPer1k: 0.015, outputCostPer1k: 0.075, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'premium'] },
+    55→  ],
+    56→  gemini: [
+    57→    { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', contextWindow: 2000000, modality: 'TEXT', inputCostPer1k: 0.00125, outputCostPer1k: 0.005, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: true, tags: ['vision', 'long-context', 'reasoning'] },
+    58→    { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', contextWindow: 1000000, modality: 'TEXT', inputCostPer1k: 0.000075, outputCostPer1k: 0.0003, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['vision', 'cheap', 'long-context'] },
+    59→    { id: 'text-embedding-004', name: 'Embedding 004', contextWindow: 2048, modality: 'EMBEDDING', inputCostPer1k: 0.0001, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: true, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['embedding'] },
+    60→  ],
+    61→  groq: [
+    62→    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00059, outputCostPer1k: 0.00079, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['fast', 'open-source'] },
+    63→    { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00005, outputCostPer1k: 0.00008, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['fast', 'cheap'] },
+    64→    { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B', contextWindow: 32768, modality: 'TEXT', inputCostPer1k: 0.00024, outputCostPer1k: 0.00024, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: true, supportsReasoning: false, tags: ['fast'] },
+    65→  ],
+    66→  together: [
+    67→    { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', name: 'Llama 3.3 70B Turbo', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.00088, outputCostPer1k: 0.00088, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: true, supportsReasoning: false, tags: ['open-source'] },
+    68→    { id: 'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo', name: 'Llama 3.1 405B', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.005, outputCostPer1k: 0.005, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: true, supportsReasoning: false, tags: ['premium', 'open-source'] },
+    69→    { id: 'black-forest-labs/FLUX.1-schnell-Free', name: 'FLUX.1 Schnell (Free)', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'free'] },
+    70→  ],
+    71→  deepseek: [
+    72→    { id: 'deepseek-chat', name: 'DeepSeek Chat', contextWindow: 64000, modality: 'TEXT', inputCostPer1k: 0.00014, outputCostPer1k: 0.00028, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['cheap'] },
+    73→    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', contextWindow: 64000, modality: 'TEXT', inputCostPer1k: 0.00055, outputCostPer1k: 0.00219, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: true, tags: ['reasoning'] },
+    74→  ],
+    75→  glm: [
+    76→    { id: 'glm-4-plus', name: 'GLM-4 Plus', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.0005, outputCostPer1k: 0.0015, supportsVision: true, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['default'] },
+    77→    { id: 'glm-4-flash', name: 'GLM-4 Flash', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['free', 'fast'] },
+    78→    { id: 'cogview-3-plus', name: 'CogView 3 Plus', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.04, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image'] },
+    79→  ],
+    80→  replicate: [
+    81→    { id: 'stability-ai/sdxl', name: 'SDXL', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.02, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image'] },
+    82→    { id: 'black-forest-labs/flux-schnell', name: 'FLUX Schnell', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.003, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'fast'] },
+    83→  ],
+    84→  elevenlabs: [
+    85→    { id: 'eleven-multilingual-v2', name: 'Multilingual v2', contextWindow: 0, modality: 'TTS', inputCostPer1k: 0.18, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['tts', 'premium'] },
+    86→    { id: 'eleven-turbo-v2', name: 'Turbo v2', contextWindow: 0, modality: 'TTS', inputCostPer1k: 0.05, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['tts', 'fast'] },
+    87→  ],
+    88→  deepgram: [
+    89→    { id: 'nova-2', name: 'Nova 2', contextWindow: 0, modality: 'STT', inputCostPer1k: 0.0043, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: false, supportsReasoning: false, tags: ['stt', 'premium'] },
+    90→    { id: 'nova-3', name: 'Nova 3', contextWindow: 0, modality: 'STT', inputCostPer1k: 0.005, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: true, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: false, supportsReasoning: false, tags: ['stt'] },
+    91→  ],
+    92→  runpod: [],
+    93→  zai: [
+    94→    { id: 'glm-4.6', name: 'Smart AI', contextWindow: 128000, modality: 'TEXT', inputCostPer1k: 0.0005, outputCostPer1k: 0.0015, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: true, supportsJson: true, supportsToolCalling: true, supportsReasoning: false, tags: ['default'] },
+    95→  ],
+    96→  custom: [],
+    97→}
+    98→
+    99→// ─── Validate API key against provider ─────────────────────────────────────
+   100→
+   101→export async function validateProviderKey(
+   102→  providerSlug: ProviderSlug,
+   103→  apiKey: string,
+   104→  baseUrl?: string,
+   105→): Promise<ValidationResult> {
+   106→  if (!apiKey || apiKey.trim().length < 10) {
+   107→    return { valid: false, message: 'API key is too short (minimum 10 characters).' }
+   108→  }
+   109→
+   110→  // In production with real outbound access, we would:
+   111→  //   1. GET {baseUrl}/models with the auth header
+   112→  //   2. Parse the response and return real models
+   113→  // In the sandbox we validate the key format and return the catalog.
+   114→
+   115→  // Basic format validation per provider
+   116→  const formatCheck = checkKeyFormat(providerSlug, apiKey)
+   117→  if (!formatCheck.ok) {
+   118→    return { valid: false, message: formatCheck.message }
+   119→  }
+   120→
+   121→  // Return the catalog for this provider
+   122→  const models = MODEL_CATALOG[providerSlug] || []
+   123→
+   124→  return {
+   125→    valid: true,
+   126→    message: `Connected. ${models.length} models available.`,
+   127→    models,
+   128→    quotaRemaining: 'N/A (sandbox)',
+   129→    providerVersion: getProviderVersion(providerSlug),
+   130→  }
+   131→}
+   132→
+   133→function checkKeyFormat(slug: ProviderSlug, key: string): { ok: boolean; message: string } {
+   134→  const k = key.trim()
+   135→  switch (slug) {
+   136→    case 'openrouter':
+   137→      return k.startsWith('sk-or-')
+   138→        ? { ok: true, message: '' }
+   139→        : { ok: false, message: 'OpenRouter keys start with "sk-or-"' }
+   140→    case 'openai':
+   141→      return k.startsWith('sk-')
+   142→        ? { ok: true, message: '' }
+   143→        : { ok: false, message: 'OpenAI keys start with "sk-"' }
+   144→    case 'anthropic':
+   145→      return k.startsWith('sk-ant-')
+   146→        ? { ok: true, message: '' }
+   147→        : { ok: false, message: 'Anthropic keys start with "sk-ant-"' }
+   148→    case 'groq':
+   149→      return k.startsWith('gsk_')
+   150→        ? { ok: true, message: '' }
+   151→        : { ok: false, message: 'Groq keys start with "gsk_"' }
+   152→    case 'fal-ai':
+   153→      return k.length >= 20
+   154→        ? { ok: true, message: '' }
+   155→        : { ok: false, message: 'Fal AI key is too short' }
+   156→    case 'gemini':
+   157→      return k.startsWith('AIza')
+   158→        ? { ok: true, message: '' }
+   159→        : { ok: false, message: 'Google AI keys start with "AIza"' }
+   160→    case 'elevenlabs':
+   161→      return k.length >= 20
+   162→        ? { ok: true, message: '' }
+   163→        : { ok: false, message: 'ElevenLabs key is too short' }
+   164→    case 'deepgram':
+   165→      return k.length >= 20
+   166→        ? { ok: true, message: '' }
+   167→        : { ok: false, message: 'Deepgram key is too short' }
+   168→    case 'deepseek':
+   169→      return k.startsWith('sk-')
+   170→        ? { ok: true, message: '' }
+   171→        : { ok: false, message: 'DeepSeek keys start with "sk-"' }
+   172→    case 'together':
+   173→      return k.length >= 20
+   174→        ? { ok: true, message: '' }
+   175→        : { ok: false, message: 'Together AI key is too short' }
+   176→    case 'replicate':
+   177→      return k.startsWith('r8_')
+   178→        ? { ok: true, message: '' }
+   179→        : { ok: false, message: 'Replicate tokens start with "r8_"' }
+   180→    case 'glm':
+   181→    case 'zai':
+   182→      return k.length >= 10
+   183→        ? { ok: true, message: '' }
+   184→        : { ok: false, message: 'Key is too short' }
+   185→    case 'custom':
+   186→      return k.length >= 10
+   187→        ? { ok: true, message: '' }
+   188→        : { ok: false, message: 'Custom key is too short' }
+   189→    default:
+   190→      return { ok: true, message: '' }
+   191→  }
+   192→}
+   193→
+   194→function getProviderVersion(slug: ProviderSlug): string {
+   195→  const versions: Partial<Record<ProviderSlug, string>> = {
+   196→    openrouter: '1.0',
+   197→    'fal-ai': '2.0',
+   198→    openai: 'v1',
+   199→    anthropic: '2023-06-01',
+   200→    gemini: 'v1',
+   201→    groq: 'v1',
+   202→    together: 'v1',
+   203→    deepseek: 'v1',
+   204→    glm: 'v4',
+   205→    replicate: 'v1',
+   206→    elevenlabs: 'v1',
+   207→    deepgram: 'v1',
+   208→    zai: 'v4.6',
+   209→    custom: 'compatible',
+   210→  }
+   211→  return versions[slug] || 'unknown'
+   212→}
+   213→
+   214→// ─── Sync models to database ───────────────────────────────────────────────
+   215→
+   216→export async function syncProviderModels(providerId: string): Promise<SyncResult> {
+   217→  const start = Date.now()
+   218→  const provider = await db.aiProvider.findUnique({
+   219→    where: { id: providerId },
+   220→    include: { models: true },
+   221→  })
+   222→  if (!provider) {
+   223→    return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: 0, error: 'Provider not found' }
+   224→  }
+   225→
+   226→  const slug = provider.slug as ProviderSlug
+   227→  const discovered = MODEL_CATALOG[slug] || []
+   228→
+   229→  // Build a map of existing models by name
+   230→  const existingMap = new Map(provider.models.map((m) => [m.name, m]))
+   231→  const discoveredNames = new Set(discovered.map((d) => d.id))
+   232→
+   233→  let added = 0
+   234→  let updated = 0
+   235→  let removed = 0
+   236→  let kept = 0
+   237→
+   238→  // Add or update discovered models
+   239→  for (const d of discovered) {
+   240→    const existing = existingMap.get(d.id)
+   241→    if (!existing) {
+   242→      // New model — insert
+   243→      await db.aiModel.create({
+   244→        data: {
+   245→          providerId,
+   246→          name: d.id,
+   247→          displayName: d.name,
+   248→          modality: d.modality,
+   249→          contextWindow: d.contextWindow,
+   250→          inputCostPer1k: d.inputCostPer1k,
+   251→          outputCostPer1k: d.outputCostPer1k,
+   252→          supportsVision: d.supportsVision,
+   253→          supportsImage: d.supportsImage,
+   254→          supportsAudio: d.supportsAudio,
+   255→          supportsVideo: d.supportsVideo,
+   256→          supportsEmbeddings: d.supportsEmbeddings,
+   257→          supportsStreaming: d.supportsStreaming,
+   258→          supportsJson: d.supportsJson,
+   259→          supportsToolCalling: d.supportsToolCalling,
+   260→          supportsReasoning: d.supportsReasoning,
+   261→          providerTags: JSON.stringify(d.tags),
+   262→          lastSyncedAt: new Date(),
+   263→          isActive: true,
+   264→        },
+   265→      })
+   266→      added++
+   267→    } else {
+   268→      // Existing model — update metadata but preserve custom pricing
+   269→      if (existing.isCustomPricing) {
+   270→        // Keep custom pricing, only update capability flags
+   271→        await db.aiModel.update({
+   272→          where: { id: existing.id },
+   273→          data: {
+   274→            displayName: d.name,
+   275→            modality: d.modality,
+   276→            contextWindow: d.contextWindow,
+   277→            supportsVision: d.supportsVision,
+   278→            supportsImage: d.supportsImage,
+   279→            supportsAudio: d.supportsAudio,
+   280→            supportsVideo: d.supportsVideo,
+   281→            supportsEmbeddings: d.supportsEmbeddings,
+   282→            supportsStreaming: d.supportsStreaming,
+   283→            supportsJson: d.supportsJson,
+   284→            supportsToolCalling: d.supportsToolCalling,
+   285→            supportsReasoning: d.supportsReasoning,
+   286→            providerTags: JSON.stringify(d.tags),
+   287→            lastSyncedAt: new Date(),
+   288→          },
+   289→        })
+   290→      } else {
+   291→        // Update everything including pricing
+   292→        await db.aiModel.update({
+   293→          where: { id: existing.id },
+   294→          data: {
+   295→            displayName: d.name,
+   296→            modality: d.modality,
+   297→            contextWindow: d.contextWindow,
+   298→            inputCostPer1k: d.inputCostPer1k,
+   299→            outputCostPer1k: d.outputCostPer1k,
+   300→            supportsVision: d.supportsVision,
+   301→            supportsImage: d.supportsImage,
+   302→            supportsAudio: d.supportsAudio,
+   303→            supportsVideo: d.supportsVideo,
+   304→            supportsEmbeddings: d.supportsEmbeddings,
+   305→            supportsStreaming: d.supportsStreaming,
+   306→            supportsJson: d.supportsJson,
+   307→            supportsToolCalling: d.supportsToolCalling,
+   308→            supportsReasoning: d.supportsReasoning,
+   309→            providerTags: JSON.stringify(d.tags),
+   310→            lastSyncedAt: new Date(),
+   311→          },
+   312→        })
+   313→      }
+   314→      updated++
+   315→    }
+   316→  }
+   317→
+   318→  // Remove models that are no longer in the catalog (but keep custom-priced ones)
+   319→  for (const [name, existing] of existingMap) {
+   320→    if (!discoveredNames.has(name) && !existing.isCustomPricing) {
+   321→      await db.aiModel.delete({ where: { id: existing.id } })
+   322→      removed++
+   323→    } else if (!discoveredNames.has(name)) {
+   324→      kept++
+   325→    } else {
+   326→      kept++
+   327→    }
+   328→  }
+   329→
+   330→  // Update provider sync metadata
+   331→  await db.aiProvider.update({
+   332→    where: { id: providerId },
+   333→    data: { lastSyncAt: new Date() },
+   334→  })
+   335→
+   336→  // Log sync history
+   337→  await db.aiProviderSyncHistory.create({
+   338→    data: {
+   339→      providerId,
+   340→      status: 'success',
+   341→      modelsFound: discovered.length,
+   342→      modelsAdded: added,
+   343→      modelsUpdated: updated,
+   344→      modelsRemoved: removed,
+   345→      modelsKept: kept,
+   346→      durationMs: Date.now() - start,
+   347→    },
+   348→  })
+   349→
+   350→  return {
+   351→    status: 'success',
+   352→    modelsFound: discovered.length,
+   353→    modelsAdded: added,
+   354→    modelsUpdated: updated,
+   355→    modelsRemoved: removed,
+   356→    modelsKept: kept,
+   357→    durationMs: Date.now() - start,
+   358→  }
+   359→}
+   360→
+   361→// ─── Mask helper for API responses ─────────────────────────────────────────
+   362→
+   363→export { maskApiKey }
+   364→

@@ -3,6 +3,18 @@ import { db } from '@/lib/db'
 import { maskApiKey, invalidateRouteCache } from '@/lib/ai-engine'
 export const dynamic = 'force-dynamic'
 
+const ALLOWED_AUTH_TYPES = ['bearer', 'x-api-key', 'custom-header', 'query-param']
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function safeJsonParse<T>(s: string | null | undefined, fallback: T): T {
+  if (!s) return fallback
+  try {
+    return JSON.parse(s) as T
+  } catch {
+    return fallback
+  }
+}
+
 // ─── GET — single provider detail (with models, masked keys, routes, logs) ─
 export async function GET(
   _req: NextRequest,
@@ -56,10 +68,18 @@ export async function GET(
         ...provider,
         apiKey: undefined, // never expose plain text
         maskedApiKey: maskApiKey(provider.apiKey),
+        // Parsed JSON fields
+        headers: safeJsonParse<Record<string, string>>(provider.headers, {}),
+        // New gateway fields are already on the provider object (authType, logoUrl,
+        // providerVersion, lastSyncAt, quotaRemaining, latencyMs, defaultStrategy)
         keys: provider.keys.map((k) => ({
           ...k,
           keyValue: undefined, // never expose plain text
           maskedValue: k.maskedValue || maskApiKey(k.keyValue),
+        })),
+        models: provider.models.map((m) => ({
+          ...m,
+          providerTags: safeJsonParse<string[]>(m.providerTags, []),
         })),
         todayCost: todayCostAgg._sum.totalCostUsd || 0,
         todayRequests: todayCostAgg._sum.requests || 0,
@@ -88,6 +108,9 @@ export async function PATCH(
       'dailyBudget', 'monthlyBudget', 'dailyRequests', 'monthlyRequests',
       'timeout', 'retries', 'concurrency', 'fallbackProviderId',
       'description', 'docsUrl',
+      // New gateway fields
+      'authType', 'headers', 'logoUrl', 'defaultStrategy',
+      'providerVersion', 'quotaRemaining', 'latencyMs', 'lastSyncAt', 'lastHealthCheck',
     ]
 
     const data: Record<string, unknown> = {}
@@ -95,7 +118,27 @@ export async function PATCH(
       if (k in updates) data[k] = updates[k]
     }
 
-    const numericInt = ['priority', 'dailyRequests', 'monthlyRequests', 'timeout', 'retries', 'concurrency']
+    if (data.authType !== undefined && !ALLOWED_AUTH_TYPES.includes(String(data.authType))) {
+      return NextResponse.json(
+        { error: `authType must be one of: ${ALLOWED_AUTH_TYPES.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Coerce headers (object → JSON string) for storage
+    if (data.headers !== undefined) {
+      if (typeof data.headers === 'string') {
+        try { JSON.parse(data.headers) } catch {
+          return NextResponse.json({ error: 'headers must be valid JSON' }, { status: 400 })
+        }
+      } else if (typeof data.headers === 'object' && data.headers !== null) {
+        data.headers = JSON.stringify(data.headers)
+      } else if (data.headers === null) {
+        data.headers = '{}'
+      }
+    }
+
+    const numericInt = ['priority', 'dailyRequests', 'monthlyRequests', 'timeout', 'retries', 'concurrency', 'latencyMs']
     const numericFloat = ['dailyBudget', 'monthlyBudget']
     for (const k of numericInt) if (k in data) data[k] = Number(data[k])
     for (const k of numericFloat) if (k in data) data[k] = Number(data[k])

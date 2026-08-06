@@ -9,6 +9,11 @@ import {
   Rocket, FileText, ListChecks, HardDrive, Clock, TrendingUp, TrendingDown,
   CircleDot, Wifi, WifiOff, UserCheck, Coins, BarChart3, ShieldAlert,
   KeySquare, ArrowRightLeft, ClipboardList, PlayCircle, XCircle, Eye as EyeIcon,
+  // Provider Gateway UI icons
+  Brain, Image as ImageIcon, Video as VideoIcon, Mic, Volume2, Puzzle,
+  Star, ChevronDown, ChevronUp, ExternalLink, Terminal, Send, Play,
+  CheckCircle2, Sparkles, Cable, Settings, BookOpen, Stethoscope, ServerCog,
+  Plug, PlugZap, RefreshCcw, Timer, Workflow, Building2, Wrench,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +33,7 @@ import {
 import { toast } from 'sonner'
 import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 import { cn } from '@/lib/utils'
+import { PROVIDER_REGISTRY, getProviderMeta, type ProviderMeta, type AuthType } from '@/lib/provider-gateway'
 
 /* ============================================================================
  * Types — API response contracts (mirror Task 3a backend shapes)
@@ -43,6 +49,20 @@ interface ProviderModel {
   inputCostPer1k: number
   outputCostPer1k: number
   isActive: boolean
+  // Extended gateway fields (optional — backend may not return all)
+  contextWindow?: number
+  supportsVision?: boolean
+  supportsImage?: boolean
+  supportsAudio?: boolean
+  supportsVideo?: boolean
+  supportsEmbeddings?: boolean
+  supportsStreaming?: boolean
+  supportsJson?: boolean
+  supportsToolCalling?: boolean
+  supportsReasoning?: boolean
+  providerTags?: string[]
+  isCustomPricing?: boolean
+  lastSyncedAt?: string | null
 }
 
 interface Provider {
@@ -68,6 +88,78 @@ interface Provider {
   todayRequests: number
   todayFailures: number
   models: ProviderModel[]
+  // Extended gateway fields (optional — backend may not return all)
+  authType?: string
+  headers?: string | Record<string, string> | null
+  logoUrl?: string | null
+  providerVersion?: string | null
+  lastSyncAt?: string | null
+  quotaRemaining?: string | null
+  latencyMs?: number | null
+  defaultStrategy?: string | null
+  baseUrl?: string | null
+  webhookSecret?: string | null
+  timeout?: number
+  retries?: number
+  concurrency?: number
+  fallbackProviderId?: string | null
+}
+
+// ─── Enterprise gateway types (mirror Task 3a backend shapes) ─────────────
+interface TestConnectionResult {
+  status?: 'healthy' | 'degraded' | 'down' | string
+  latencyMs?: number
+  testsRun?: string[]
+  testsPassed?: string[]
+  providerVersion?: string
+  quotaRemaining?: string
+  modelCount?: number
+  error?: string
+  success?: boolean
+  message?: string
+}
+
+interface TestPromptResult {
+  success: boolean
+  response?: string
+  inputTokens?: number
+  outputTokens?: number
+  costUsd?: number
+  latencyMs?: number
+  error?: string
+}
+
+interface SyncModelsResult {
+  success?: boolean
+  status?: 'success' | 'partial' | 'failed' | string
+  modelsFound?: number
+  modelsAdded?: number
+  modelsUpdated?: number
+  modelsRemoved?: number
+  modelsKept?: number
+  durationMs?: number
+  error?: string
+  message?: string
+}
+
+interface ValidateKeyResult {
+  valid: boolean
+  message?: string
+  modelsCount?: number
+  quotaRemaining?: string
+  providerVersion?: string
+}
+
+interface ProviderUsage {
+  requests?: number
+  successRate?: number
+  avgLatencyMs?: number
+  dailyCost?: number
+  monthlyCost?: number
+  creditsUsed?: number
+  failures?: number
+  topModels?: Array<{ modelId: string; name?: string; requests: number; cost: number }>
+  mostUsedFeatures?: Array<{ category: string; requests: number }>
 }
 
 interface ProviderKey {
@@ -628,16 +720,124 @@ function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
 }
 
 /* ============================================================================
- * 2. Providers — full CRUD with test + rotate + edit dialog
+ * 2. Providers — Enterprise AI Gateway UI
+ * ----------------------------------------------------------------------------
+ * Comprehensive provider management: cards with health, capabilities, API key
+ * validation, test connection, sync models, test prompt, usage stats, and
+ * an expandable per-provider models table.
  * ========================================================================== */
+
+const MODALITY_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  TEXT: Brain,
+  IMAGE: ImageIcon,
+  VIDEO: VideoIcon,
+  AUDIO: Volume2,
+  EMBEDDING: Boxes,
+  STT: Mic,
+  TTS: Volume2,
+  VISION: Eye,
+}
+
+const MODALITY_COLORS: Record<string, string> = {
+  TEXT: 'bg-amber-500/10 text-amber-600',
+  IMAGE: 'bg-violet-500/10 text-violet-600',
+  VIDEO: 'bg-violet-500/10 text-violet-600',
+  AUDIO: 'bg-sky-500/10 text-sky-600',
+  EMBEDDING: 'bg-emerald-500/10 text-emerald-600',
+  STT: 'bg-sky-500/10 text-sky-600',
+  TTS: 'bg-sky-500/10 text-sky-600',
+  VISION: 'bg-amber-500/10 text-amber-600',
+  OCR: 'bg-amber-500/10 text-amber-600',
+  RERANKER: 'bg-amber-500/10 text-amber-600',
+  MODERATION: 'bg-red-500/10 text-red-600',
+}
+
+// Lightweight brace icon (avoids lucide import name clash)
+function BracesIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1" />
+      <path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
+    </svg>
+  )
+}
+
+function capList(caps: string | undefined | null): string[] {
+  if (!caps) return []
+  return caps.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+function parseHeaders(h: string | Record<string, string> | null | undefined): Record<string, string> {
+  if (!h) return {}
+  if (typeof h === 'object') return h
+  try { return JSON.parse(h) as Record<string, string> } catch { return {} }
+}
+
+function stringifyHeaders(h: string | Record<string, string> | null | undefined): string {
+  const obj = parseHeaders(h)
+  return Object.keys(obj).length ? JSON.stringify(obj, null, 2) : ''
+}
+
+function fmtCtx(n: number | undefined): string {
+  if (!n || n <= 0) return '—'
+  if (n >= 1000) return `${Math.round(n / 1000)}K`
+  return String(n)
+}
+
+function latencyColor(ms: number | null | undefined): string {
+  if (ms == null) return 'bg-muted text-muted-foreground'
+  if (ms < 500) return 'bg-emerald-500/10 text-emerald-600'
+  if (ms < 2000) return 'bg-amber-500/10 text-amber-600'
+  return 'bg-red-500/10 text-red-600'
+}
+
+function CapIconBadges({ model }: { model: ProviderModel }) {
+  const features: Array<{ key: keyof ProviderModel; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+    { key: 'supportsVision', label: 'Vision', icon: Eye },
+    { key: 'supportsImage', label: 'Image', icon: ImageIcon },
+    { key: 'supportsAudio', label: 'Audio', icon: Volume2 },
+    { key: 'supportsVideo', label: 'Video', icon: VideoIcon },
+    { key: 'supportsEmbeddings', label: 'Embed', icon: Boxes },
+    { key: 'supportsStreaming', label: 'Stream', icon: Activity },
+    { key: 'supportsJson', label: 'JSON', icon: BracesIcon },
+    { key: 'supportsToolCalling', label: 'Tools', icon: Wrench },
+    { key: 'supportsReasoning', label: 'Reason', icon: Brain },
+  ]
+  return (
+    <div className="flex flex-wrap gap-1">
+      {features
+        .filter((f) => model[f.key] === true)
+        .map((f) => {
+          const Icon = f.icon
+          return (
+            <span
+              key={f.label}
+              title={f.label}
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium bg-muted text-muted-foreground"
+            >
+              <Icon className="h-2.5 w-2.5" />
+              {f.label}
+            </span>
+          )
+        })}
+    </div>
+  )
+}
 
 function ProvidersPanel() {
   const { data, loading, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [showKey, setShowKey] = useState<Record<string, boolean>>({})
-  const [testing, setTesting] = useState<string | null>(null)
-  const [rotating, setRotating] = useState<Provider | null>(null)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [testConn, setTestConn] = useState<{
+    open: boolean; provider?: Provider; loading?: boolean; result?: TestConnectionResult
+  }>({ open: false })
+  const [testPrompt, setTestPrompt] = useState<{ open: boolean; provider?: Provider }>({ open: false })
+  const [usage, setUsage] = useState<{ open: boolean; provider?: Provider }>({ open: false })
+  const [addOpen, setAddOpen] = useState(false)
   const [editing, setEditing] = useState<Provider | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [validatingId, setValidatingId] = useState<string | null>(null)
+  const [newKeys, setNewKeys] = useState<Record<string, string>>({})
+  const [syncingId, setSyncingId] = useState<string | null>(null)
 
   if (loading || !data) return <LoadingBlock />
 
@@ -646,277 +846,1224 @@ function ProvidersPanel() {
     refetch()
   }
 
-  const testProvider = async (p: Provider) => {
-    setTesting(p.id)
-    try {
-      const res = await fetch(`/api/admin/providers/${p.id}/test`, { method: 'POST' })
-      const d = (await res.json()) as { success?: boolean; latencyMs?: number; message?: string }
-      if (d.success) toast.success(`${p.name}: healthy (${d.latencyMs}ms)`)
-      else toast.error(`${p.name}: ${d.message || 'test failed'}`)
-      refetch()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Test failed')
-    } finally {
-      setTesting(null)
-    }
-  }
-
-  const submitRotate = async (newKey: string) => {
-    if (!rotating) return
-    if (newKey.trim().length < 8) {
-      toast.error('Key must be at least 8 characters')
+  const validateKey = async (p: Provider) => {
+    const newKey = (newKeys[p.id] || '').trim()
+    if (newKey.length < 8) {
+      toast.error('API key must be at least 8 characters')
       return
     }
-    setSaving(true)
+    setValidatingId(p.id)
     try {
-      const res = await fetch(`/api/admin/providers/${rotating.id}/rotate-key`, {
+      // 1. Validate the new key
+      const valRes = await fetch(`/api/admin/providers/${p.id}/validate-key`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newKey }),
+        body: JSON.stringify({ apiKey: newKey }),
       })
-      const d = await res.json()
-      if (!res.ok) throw new Error((d as { error?: string }).error || 'Rotate failed')
-      toast.success(`${rotating.name} key rotated`)
-      setRotating(null)
+      const valData = (await valRes.json().catch(() => ({}))) as ValidateKeyResult & { error?: string }
+      if (!valRes.ok || !valData.valid) {
+        toast.error(valData.message || valData.error || 'Invalid API key')
+        return
+      }
+      toast.success(valData.message || `Connected. ${valData.modelsCount ?? 0} models available.`)
+      // 2. Save the validated key
+      const saveOk = await mutate('/api/admin/providers', 'PUT', { id: p.id, apiKey: newKey })
+      if (!saveOk.ok) return
+      // 3. Auto-sync models (best-effort)
+      try {
+        const syncRes = await fetch(`/api/admin/providers/${p.id}/sync-models`, { method: 'POST' })
+        const syncData = (await syncRes.json().catch(() => ({}))) as SyncModelsResult
+        if (syncRes.ok && (syncData.success || syncData.status === 'success' || syncData.status === 'partial')) {
+          toast.success(
+            `Synced: ${syncData.modelsFound ?? 0} found, ${syncData.modelsAdded ?? 0} added, ${syncData.modelsUpdated ?? 0} updated, ${syncData.modelsRemoved ?? 0} removed`,
+          )
+        }
+      } catch {
+        /* sync is best-effort — key was already saved */
+      }
+      setNewKeys((s) => ({ ...s, [p.id]: '' }))
       refetch()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Rotate failed')
+      toast.error(e instanceof Error ? e.message : 'Validation failed')
     } finally {
-      setSaving(false)
+      setValidatingId(null)
     }
   }
 
-  const submitEdit = async (patch: Record<string, unknown>) => {
-    if (!editing) return
-    setSaving(true)
-    const ok = await mutate('/api/admin/providers', 'PUT', { id: editing.id, ...patch }, `${editing.name} updated`)
-    setSaving(false)
-    if (ok.ok) {
-      setEditing(null)
-      refetch()
+  const testConnection = async (p: Provider) => {
+    setTestConn({ open: true, provider: p, loading: true })
+    try {
+      const res = await fetch(`/api/admin/providers/${p.id}/test-connection`, { method: 'POST' })
+      const d = (await res.json().catch(() => ({}))) as TestConnectionResult & { error?: string }
+      if (!res.ok) {
+        setTestConn({ open: true, provider: p, loading: false, result: { status: 'down', error: d.error || `HTTP ${res.status}` } })
+        return
+      }
+      setTestConn({ open: true, provider: p, loading: false, result: d })
+      if (d.status === 'healthy' || d.success) toast.success(`${p.name}: healthy (${d.latencyMs ?? 0}ms)`)
+      else toast.error(`${p.name}: ${d.error || d.status || 'unhealthy'}`)
+    } catch (e) {
+      setTestConn({ open: true, provider: p, loading: false, result: { status: 'down', error: e instanceof Error ? e.message : 'Network error' } })
     }
+  }
+
+  const syncModels = async (p: Provider) => {
+    setSyncingId(p.id)
+    const tid = toast.loading(`Syncing models for ${p.name}…`)
+    try {
+      const res = await fetch(`/api/admin/providers/${p.id}/sync-models`, { method: 'POST' })
+      const d = (await res.json().catch(() => ({}))) as SyncModelsResult & { error?: string }
+      if (!res.ok || d.status === 'failed') {
+        toast.error(d.error || 'Sync failed', { id: tid })
+        return
+      }
+      toast.success(
+        `Synced: ${d.modelsFound ?? 0} found, ${d.modelsAdded ?? 0} added, ${d.modelsUpdated ?? 0} updated, ${d.modelsRemoved ?? 0} removed`,
+        { id: tid },
+      )
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Sync failed', { id: tid })
+    } finally {
+      setSyncingId(null)
+    }
+  }
+
+  const toggleExpand = (p: Provider) => {
+    setExpanded((s) => ({ ...s, [p.id]: !s[p.id] }))
   }
 
   return (
     <div className="space-y-4">
+      {/* Header — gateway title + Add Provider */}
+      <Card className="overflow-hidden border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
+        <CardContent className="p-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30 shrink-0">
+              <Cable className="h-6 w-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-bold">AI Provider Gateway</h3>
+                <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 border-amber-500/20">
+                  {data.providers.length} providers
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Connect, validate, and monitor all AI providers in one place.
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => setAddOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white shrink-0">
+            <Plus className="h-4 w-4 mr-1.5" /> Add Provider
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Info banner */}
       <Card className="border-amber-500/20 bg-amber-500/5">
-        <CardContent className="p-4 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+        <CardContent className="p-3 flex items-start gap-2.5">
+          <ShieldCheck className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground">
-            API keys are <span className="font-medium text-amber-600">masked</span> server-side and never exposed to creators.
-            Smart routing auto-selects the best provider per route category, with automatic fallback when a provider fails.
+            API keys are <span className="font-medium text-amber-600">encrypted at rest</span> and never exposed to creators.
+            Smart routing auto-selects the best provider per route category, with automatic failover when a provider goes down.
           </p>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {data.providers.map((p, i) => (
-          <motion.div
-            key={p.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: Math.min(i * 0.02, 0.3) }}
-          >
-            <Card className="h-full flex flex-col">
-              <CardHeader className="pb-3 flex-row items-center justify-between">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg shrink-0', p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}>
-                    <Server className="h-5 w-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">{p.name}</p>
-                    <code className="text-[10px] text-muted-foreground">{p.slug}</code>
-                  </div>
-                </div>
-                <Switch checked={p.isActive} onCheckedChange={(v) => toggleActive(p, v)} />
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col gap-3">
-                <CapBadges capabilities={p.capabilities} />
+      {/* Provider cards grid */}
+      {data.providers.length === 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <EmptyState icon={Server} message="No providers configured yet. Click 'Add Provider' to connect your first AI gateway." />
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {data.providers.map((p, i) => (
+            <motion.div
+              key={p.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: Math.min(i * 0.02, 0.3) }}
+            >
+              <ProviderCard
+                provider={p}
+                showKey={!!showKey[p.id]}
+                expanded={!!expanded[p.id]}
+                validating={validatingId === p.id}
+                syncing={syncingId === p.id}
+                newKey={newKeys[p.id] || ''}
+                onToggleShowKey={() => setShowKey((s) => ({ ...s, [p.id]: !s[p.id] }))}
+                onToggleActive={(v) => toggleActive(p, v)}
+                onValidateKey={() => validateKey(p)}
+                onNewKeyChange={(v) => setNewKeys((s) => ({ ...s, [p.id]: v }))}
+                onTestConnection={() => testConnection(p)}
+                onSyncModels={() => syncModels(p)}
+                onTestPrompt={() => setTestPrompt({ open: true, provider: p })}
+                onUsage={() => setUsage({ open: true, provider: p })}
+                onEdit={() => setEditing(p)}
+                onToggleExpand={() => toggleExpand(p)}
+              />
+            </motion.div>
+          ))}
+        </div>
+      )}
 
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-md bg-muted/50 py-1.5">
-                    <p className="text-[10px] text-muted-foreground">Cost Today</p>
-                    <p className="text-xs font-semibold tabular-nums">{p.todayCost > 0 ? fmtMoney(p.todayCost) : '—'}</p>
-                  </div>
-                  <div className="rounded-md bg-muted/50 py-1.5">
-                    <p className="text-[10px] text-muted-foreground">Requests</p>
-                    <p className="text-xs font-semibold tabular-nums">{p.todayRequests || 0}</p>
-                  </div>
-                  <div className="rounded-md bg-muted/50 py-1.5">
-                    <p className="text-[10px] text-muted-foreground">Failures</p>
-                    <p className={cn('text-xs font-semibold tabular-nums', p.todayFailures > 0 ? 'text-red-600' : '')}>
-                      {p.todayFailures || 0}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <HealthDot healthy={p.isHealthy} />
-                  <span className="text-muted-foreground">
-                    {p.lastHealthCheck ? `checked ${timeAgo(p.lastHealthCheck)}` : 'not tested'}
-                  </span>
-                </div>
-
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">Masked API Key</Label>
-                  <div className="flex gap-1.5 mt-1">
-                    <Input
-                      type={showKey[p.id] ? 'text' : 'password'}
-                      value={p.maskedApiKey || '(not set)'}
-                      readOnly
-                      className="font-mono text-xs h-8"
-                    />
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => setShowKey((s) => ({ ...s, [p.id]: !s[p.id] }))}
-                    >
-                      {showKey[p.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="text-[10px] text-muted-foreground">
-                  <span className="font-medium">{p.modelsCount}</span> models ·{' '}
-                  <span className="font-medium">{p.keysCount}</span> keys
-                  {p.dailyBudget > 0 && <> · ${p.dailyBudget}/day budget</>}
-                </div>
-
-                <div className="flex gap-2 mt-auto pt-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="flex-1 h-8 text-xs"
-                    disabled={testing === p.id}
-                    onClick={() => testProvider(p)}
-                  >
-                    {testing === p.id ? (
-                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Testing</>
-                    ) : (
-                      <><Wifi className="h-3 w-3 mr-1" />Test</>
-                    )}
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => setRotating(p)}>
-                    <RefreshCw className="h-3 w-3 mr-1" />Rotate
-                  </Button>
-                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => setEditing(p)}>
-                    <Settings2 className="h-3 w-3 mr-1" />Edit
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Rotate Key Dialog */}
-      <RotateKeyDialog
-        provider={rotating}
-        saving={saving}
-        onClose={() => setRotating(null)}
-        onSubmit={submitRotate}
+      {/* Dialogs */}
+      <TestConnectionDialog
+        open={testConn.open}
+        provider={testConn.provider}
+        loading={!!testConn.loading}
+        result={testConn.result}
+        onClose={() => setTestConn({ open: false })}
       />
 
-      {/* Edit Provider Dialog */}
+      <TestPromptDialog
+        open={testPrompt.open}
+        provider={testPrompt.provider}
+        onClose={() => setTestPrompt({ open: false })}
+      />
+
+      <UsageDialog
+        open={usage.open}
+        provider={usage.provider}
+        onClose={() => setUsage({ open: false })}
+      />
+
+      <AddProviderDialog
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onAdded={() => { setAddOpen(false); refetch() }}
+      />
+
       {editing && (
         <EditProviderDialog
           provider={editing}
           allProviders={data.providers}
-          saving={saving}
           onClose={() => setEditing(null)}
-          onSubmit={submitEdit}
+          onSaved={() => { setEditing(null); refetch() }}
         />
       )}
     </div>
   )
 }
 
-function RotateKeyDialog({
-  provider, saving, onClose, onSubmit,
+/* ----------------------------------------------------------------------------
+ * ProviderCard — full management card
+ * -------------------------------------------------------------------------- */
+
+function ProviderCard({
+  provider, showKey, expanded, validating, syncing, newKey,
+  onToggleShowKey, onToggleActive, onValidateKey, onNewKeyChange,
+  onTestConnection, onSyncModels, onTestPrompt, onUsage, onEdit, onToggleExpand,
 }: {
-  provider: Provider | null
-  saving: boolean
-  onClose: () => void
-  onSubmit: (newKey: string) => void
+  provider: Provider
+  showKey: boolean
+  expanded: boolean
+  validating: boolean
+  syncing: boolean
+  newKey: string
+  onToggleShowKey: () => void
+  onToggleActive: (v: boolean) => void
+  onValidateKey: () => void
+  onNewKeyChange: (v: string) => void
+  onTestConnection: () => void
+  onSyncModels: () => void
+  onTestPrompt: () => void
+  onUsage: () => void
+  onEdit: () => void
+  onToggleExpand: () => void
 }) {
-  const [newKey, setNewKey] = useState('')
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNewKey('')
-  }, [provider])
+  const p = provider
+  const caps = capList(p.capabilities)
+  const meta = getProviderMeta(p.slug)
+  const lastSync = p.lastSyncAt || p.lastHealthCheck
+
   return (
-    <Dialog open={!!provider} onOpenChange={(o) => !o && onClose()}>
+    <Card className="h-full flex flex-col">
+      <CardHeader className="pb-3 flex-row items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-lg shrink-0',
+              p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground',
+            )}
+            style={meta ? { backgroundColor: meta.color + '20', color: meta.color } : undefined}
+          >
+            <Server className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-sm truncate">{p.name}</p>
+              {p.providerVersion && (
+                <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-muted text-muted-foreground shrink-0">
+                  v{p.providerVersion}
+                </Badge>
+              )}
+            </div>
+            <code className="text-[10px] text-muted-foreground">{p.slug}</code>
+          </div>
+        </div>
+        <Switch checked={p.isActive} onCheckedChange={onToggleActive} />
+      </CardHeader>
+
+      <CardContent className="flex-1 flex flex-col gap-3">
+        {/* Status row */}
+        <div className="flex items-center justify-between text-[11px]">
+          <div className="flex items-center gap-1.5">
+            <HealthDot healthy={p.isHealthy} label={p.isHealthy ? 'Healthy' : 'Down'} />
+          </div>
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            {p.lastHealthCheck ? <span>{timeAgo(p.lastHealthCheck)}</span> : <span>not tested</span>}
+            {p.latencyMs != null && (
+              <Badge variant="secondary" className={cn('text-[9px] px-1 py-0 font-mono', latencyColor(p.latencyMs))}>
+                {p.latencyMs}ms
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Capabilities badges */}
+        {caps.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {caps.map((c) => {
+              const Icon = MODALITY_ICONS[c]
+              return (
+                <Badge
+                  key={c}
+                  variant="secondary"
+                  className={cn('text-[9px] font-medium px-1.5 py-0 flex items-center gap-0.5', MODALITY_COLORS[c] || 'bg-muted')}
+                >
+                  {Icon && <Icon className="h-2.5 w-2.5" />}
+                  {c}
+                </Badge>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-md bg-muted/50 py-1.5">
+            <p className="text-[10px] text-muted-foreground">Models</p>
+            <p className="text-xs font-semibold tabular-nums">{p.modelsCount}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 py-1.5">
+            <p className="text-[10px] text-muted-foreground">Today Reqs</p>
+            <p className="text-xs font-semibold tabular-nums">{p.todayRequests || 0}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 py-1.5">
+            <p className="text-[10px] text-muted-foreground">Today Cost</p>
+            <p className={cn('text-xs font-semibold tabular-nums', p.todayCost > 0 ? 'text-amber-600' : '')}>
+              {p.todayCost > 0 ? fmtMoney(p.todayCost) : '—'}
+            </p>
+          </div>
+        </div>
+
+        {/* API Key section */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="text-[10px] text-muted-foreground">Masked API Key</Label>
+            {p.quotaRemaining && (
+              <span className="text-[9px] text-muted-foreground">Quota: {p.quotaRemaining}</span>
+            )}
+          </div>
+          <div className="flex gap-1.5">
+            <Input
+              type={showKey ? 'text' : 'password'}
+              value={p.maskedApiKey || '(not set)'}
+              readOnly
+              className="font-mono text-xs h-8"
+            />
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-8 w-8 shrink-0"
+              onClick={onToggleShowKey}
+              title={showKey ? 'Hide masked key' : 'Show masked key'}
+            >
+              {showKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+          <div className="flex gap-1.5">
+            <Input
+              type="password"
+              placeholder="Enter new API key to validate…"
+              value={newKey}
+              onChange={(e) => onNewKeyChange(e.target.value)}
+              className="font-mono text-xs h-8"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 shrink-0 text-xs"
+              disabled={validating || newKey.length < 8}
+              onClick={onValidateKey}
+            >
+              {validating ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+              )}
+              Validate
+            </Button>
+          </div>
+        </div>
+
+        {/* Action buttons — 2x2 grid */}
+        <div className="grid grid-cols-2 gap-2 mt-auto pt-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onTestConnection}
+          >
+            <Stethoscope className="h-3 w-3 mr-1" /> Test Connection
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            disabled={syncing}
+            onClick={onSyncModels}
+          >
+            {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            Refresh Models
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onTestPrompt}
+          >
+            <Terminal className="h-3 w-3 mr-1" /> Test Prompt
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs"
+            onClick={onUsage}
+          >
+            <BarChart3 className="h-3 w-3 mr-1" /> Usage
+          </Button>
+        </div>
+
+        {/* Edit + Expand Models row */}
+        <div className="flex gap-2 pt-1 border-t">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs flex-1"
+            onClick={onEdit}
+          >
+            <Settings2 className="h-3 w-3 mr-1" /> Edit Settings
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs flex-1"
+            onClick={onToggleExpand}
+          >
+            {expanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
+            Models ({p.modelsCount})
+          </Button>
+        </div>
+
+        {/* Expandable models table */}
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className="border-t pt-3"
+          >
+            <ModelsTable provider={p} onSyncModels={onSyncModels} syncing={syncing} lastSync={lastSync} />
+          </motion.div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * TestConnectionDialog — shows full health-check result
+ * -------------------------------------------------------------------------- */
+
+function TestConnectionDialog({
+  open, provider, loading, result, onClose,
+}: {
+  open: boolean
+  provider?: Provider
+  loading: boolean
+  result?: TestConnectionResult
+  onClose: () => void
+}) {
+  const status = result?.status || (result?.success ? 'healthy' : 'unknown')
+  const statusColor: Record<string, string> = {
+    healthy: 'bg-emerald-500/10 text-emerald-600',
+    degraded: 'bg-amber-500/10 text-amber-600',
+    down: 'bg-red-500/10 text-red-600',
+    unknown: 'bg-muted text-muted-foreground',
+  }
+  const allTests = ['health', 'auth', 'prompt', 'streaming', 'tool']
+  const passed = result?.testsPassed || []
+  const run = result?.testsRun || []
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 text-amber-500" /> Rotate API Key
+            <Stethoscope className="h-4 w-4 text-amber-500" /> Test Connection
+            {provider && <span className="text-muted-foreground font-normal">· {provider.name}</span>}
           </DialogTitle>
           <DialogDescription>
-            Replace the active key for <span className="font-medium text-amber-600">{provider?.name}</span>.
-            The previous key will be deactivated and preserved in the audit trail.
+            Run a full health check against the provider&apos;s API. Tests authentication, prompt, streaming, and tool calling.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 py-2">
-          <div>
-            <Label className="text-xs">Current Masked Key</Label>
-            <Input value={provider?.maskedApiKey || ''} readOnly className="mt-1 font-mono text-xs" />
-          </div>
-          <div>
-            <Label className="text-xs">New Key (min 8 chars)</Label>
-            <Textarea
-              className="mt-1 font-mono text-xs"
-              rows={3}
-              placeholder="paste new API key here..."
-              value={newKey}
-              onChange={(e) => setNewKey(e.target.value)}
-            />
-          </div>
+
+        <div className="py-2 space-y-4">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
+              <p className="text-sm text-muted-foreground">Running health check…</p>
+            </div>
+          ) : result?.error && !result.status ? (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-600">Connection failed</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{result.error}</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Status banner */}
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className={cn('text-xs font-medium uppercase', statusColor[status] || statusColor.unknown)}>
+                    {status}
+                  </Badge>
+                  <span className="text-sm font-medium">{provider?.name}</span>
+                </div>
+                {result?.latencyMs != null && (
+                  <Badge variant="secondary" className={cn('text-xs font-mono', latencyColor(result.latencyMs))}>
+                    <Timer className="h-3 w-3 mr-1" /> {result.latencyMs}ms
+                  </Badge>
+                )}
+              </div>
+
+              {/* Stat cards */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Provider Version</p>
+                  <p className="text-xs font-semibold">{result?.providerVersion || '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Quota Remaining</p>
+                  <p className="text-xs font-semibold truncate">{result?.quotaRemaining || '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Model Count</p>
+                  <p className="text-xs font-semibold tabular-nums">{result?.modelCount ?? '—'}</p>
+                </div>
+              </div>
+
+              {/* Tests checklist */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium">Test Checklist</p>
+                <div className="space-y-1">
+                  {allTests.map((t) => {
+                    const wasRun = run.includes(t)
+                    const wasPassed = passed.includes(t)
+                    return (
+                      <div key={t} className="flex items-center justify-between rounded-md border px-2.5 py-1.5">
+                        <span className="text-xs capitalize">{t}</span>
+                        {!wasRun ? (
+                          <Badge variant="secondary" className="text-[9px] bg-muted text-muted-foreground">Skipped</Badge>
+                        ) : wasPassed ? (
+                          <Badge variant="secondary" className="text-[9px] bg-emerald-500/10 text-emerald-600">
+                            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Passed
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[9px] bg-red-500/10 text-red-600">
+                            <XCircle className="h-2.5 w-2.5 mr-0.5" /> Failed
+                          </Badge>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {result?.error && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2.5">
+                  <p className="text-[10px] font-medium text-amber-600 mb-0.5">Notice</p>
+                  <p className="text-xs text-muted-foreground">{result.error}</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
+
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={() => onSubmit(newKey)}>
-            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
-            Rotate Key
-          </Button>
+          <Button variant="outline" onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
+/* ----------------------------------------------------------------------------
+ * TestPromptDialog — model selector + prompt input + results
+ * -------------------------------------------------------------------------- */
+
+function TestPromptDialog({
+  open, provider, onClose,
+}: {
+  open: boolean
+  provider?: Provider
+  onClose: () => void
+}) {
+  const [modelId, setModelId] = useState<string>('')
+  const [prompt, setPrompt] = useState('Hello World')
+  const [running, setRunning] = useState(false)
+  const [result, setResult] = useState<TestPromptResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Reset state when dialog opens for a different provider
+  useEffect(() => {
+    if (open && provider) {
+      const defaultModel = provider.models.find((m) => m.isDefault) || provider.models[0]
+      setModelId(defaultModel?.id || '')
+      setPrompt('Hello World')
+      setResult(null)
+      setError(null)
+    }
+  }, [open, provider])
+
+  if (!provider) return null
+
+  const activeModels = provider.models.filter((m) => m.isActive)
+  const modelList = activeModels.length > 0 ? activeModels : provider.models
+
+  const runTest = async () => {
+    if (!provider) return
+    setRunning(true)
+    setError(null)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/admin/providers/${provider.id}/test-prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: modelId || undefined, prompt }),
+      })
+      const d = (await res.json().catch(() => ({}))) as TestPromptResult & { error?: string }
+      if (!res.ok || !d.success) {
+        setError(d.error || 'Test prompt failed')
+        return
+      }
+      setResult(d)
+      toast.success(`Prompt completed in ${d.latencyMs ?? 0}ms`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Terminal className="h-4 w-4 text-amber-500" /> Test Prompt
+            <span className="text-muted-foreground font-normal">· {provider.name}</span>
+          </DialogTitle>
+          <DialogDescription>
+            Send a test prompt to verify the model responds correctly. Token counts and cost are returned.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2 space-y-3">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Model</Label>
+              <Select value={modelId} onValueChange={setModelId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Default model" /></SelectTrigger>
+                <SelectContent>
+                  {modelList.length === 0 ? (
+                    <SelectItem value="" disabled>No models — sync first</SelectItem>
+                  ) : (
+                    modelList.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.displayName}{m.isDefault ? ' ★' : ''}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Prompt</Label>
+              <Input
+                className="mt-1"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Hello World"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <Button onClick={runTest} disabled={running || !prompt.trim()} className="bg-amber-600 hover:bg-amber-700 text-white">
+              {running ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Play className="h-4 w-4 mr-1.5" />}
+              Run Test
+            </Button>
+          </div>
+
+          {/* Error display */}
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-red-600">Test failed</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{error}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Results */}
+          {result && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Input Tokens</p>
+                  <p className="text-xs font-semibold tabular-nums">{result.inputTokens ?? 0}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Output Tokens</p>
+                  <p className="text-xs font-semibold tabular-nums">{result.outputTokens ?? 0}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Cost</p>
+                  <p className="text-xs font-semibold tabular-nums text-amber-600">{result.costUsd != null ? fmtMoney(result.costUsd) : '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">Latency</p>
+                  <p className="text-xs font-semibold tabular-nums">{result.latencyMs ?? 0}ms</p>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Response</Label>
+                <pre className="mt-1 rounded-md bg-muted/50 p-2.5 text-xs whitespace-pre-wrap break-words max-h-60 overflow-y-auto scroll-thin font-mono">
+                  {result.response || '(empty response)'}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * UsageDialog — full usage stats for a provider
+ * -------------------------------------------------------------------------- */
+
+function UsageDialog({
+  open, provider, onClose,
+}: {
+  open: boolean
+  provider?: Provider
+  onClose: () => void
+}) {
+  const { data, loading } = useApi<ProviderUsage>(open && provider ? `/api/admin/providers/${provider.id}/usage` : null)
+
+  if (!provider) return null
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-amber-500" /> Usage Stats
+            <span className="text-muted-foreground font-normal">· {provider.name}</span>
+          </DialogTitle>
+          <DialogDescription>
+            Aggregated usage for this provider over the last 30 days.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2 space-y-4">
+          {loading || !data ? (
+            <div className="space-y-2">
+              <Skeleton className="h-20 rounded-lg" />
+              <Skeleton className="h-20 rounded-lg" />
+              <Skeleton className="h-20 rounded-lg" />
+            </div>
+          ) : (
+            <>
+              {/* 4 stat cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <StatCard icon={Activity} label="Requests (30d)" value={formatNumber(data.requests || 0)} accent="amber" />
+                <StatCard icon={Check} label="Success Rate" value={`${(data.successRate ?? 0).toFixed(1)}%`} accent={data.successRate != null && data.successRate >= 95 ? 'emerald' : 'red'} />
+                <StatCard icon={Timer} label="Avg Latency" value={`${data.avgLatencyMs ?? 0}ms`} accent="sky" />
+                <StatCard icon={DollarSign} label="Daily Cost" value={fmtMoney(data.dailyCost || 0)} accent="amber" />
+              </div>
+
+              {/* 2 more */}
+              <div className="grid grid-cols-2 gap-2">
+                <StatCard icon={TrendingUp} label="Monthly Cost" value={fmtMoney(data.monthlyCost || 0)} accent="amber" />
+                <StatCard icon={Coins} label="Credits Used" value={formatNumber(data.creditsUsed || 0)} accent="emerald" />
+              </div>
+
+              {/* Failures */}
+              {(data.failures ?? 0) > 0 && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                  <span className="text-sm font-medium text-red-600">{data.failures} failures in the last 30 days</span>
+                </div>
+              )}
+
+              {/* Top models + Most used features */}
+              <div className="grid md:grid-cols-2 gap-3">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs flex items-center gap-2">
+                      <Cpu className="h-3.5 w-3.5 text-amber-500" /> Top Models
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {data.topModels && data.topModels.length > 0 ? (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto scroll-thin">
+                        {data.topModels.slice(0, 5).map((m, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate font-medium">{m.name || m.modelId}</p>
+                              <p className="text-[10px] text-muted-foreground">{formatNumber(m.requests)} requests</p>
+                            </div>
+                            <span className="font-mono tabular-nums text-amber-600 shrink-0 ml-2">{fmtMoney(m.cost)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={Cpu} message="No model usage yet." />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs flex items-center gap-2">
+                      <Workflow className="h-3.5 w-3.5 text-amber-500" /> Most Used Features
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {data.mostUsedFeatures && data.mostUsedFeatures.length > 0 ? (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto scroll-thin">
+                        {data.mostUsedFeatures.slice(0, 5).map((f, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="font-medium">{f.category}</span>
+                            <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">
+                              {formatNumber(f.requests)}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState icon={Workflow} message="No feature usage yet." />
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * AddProviderDialog — provider registry grid + connect form
+ * -------------------------------------------------------------------------- */
+
+function AddProviderDialog({
+  open, onClose, onAdded,
+}: {
+  open: boolean
+  onClose: () => void
+  onAdded: () => void
+}) {
+  const [selected, setSelected] = useState<ProviderMeta | null>(null)
+  const [apiKey, setApiKey] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [authType, setAuthType] = useState<AuthType>('bearer')
+  const [headers, setHeaders] = useState('')
+  const [capabilities, setCapabilities] = useState<string[]>(['TEXT'])
+  const [connecting, setConnecting] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setSelected(null)
+      setApiKey('')
+      setBaseUrl('')
+      setAuthType('bearer')
+      setHeaders('')
+      setCapabilities(['TEXT'])
+    }
+  }, [open])
+
+  const pickProvider = (meta: ProviderMeta) => {
+    setSelected(meta)
+    setBaseUrl(meta.defaultBaseUrl)
+    setAuthType(meta.authType)
+    setCapabilities(meta.capabilities)
+  }
+
+  const toggleCap = (cap: string) => {
+    setCapabilities((c) => c.includes(cap) ? c.filter((x) => x !== cap) : [...c, cap])
+  }
+
+  const connect = async () => {
+    if (!selected) return
+    if (apiKey.trim().length < 8) {
+      toast.error('API key must be at least 8 characters')
+      return
+    }
+    setConnecting(true)
+    try {
+      // 1. Create the provider
+      const createRes = await fetch('/api/admin/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: selected.slug,
+          name: selected.name,
+          baseUrl: baseUrl || selected.defaultBaseUrl,
+          apiKey,
+          authType,
+          headers: headers || undefined,
+          capabilities: capabilities.join(','),
+          description: selected.description,
+          docsUrl: selected.docsUrl,
+        }),
+      })
+      const created = (await createRes.json().catch(() => ({}))) as { provider?: { id: string }; error?: string }
+      if (!createRes.ok || !created.provider) {
+        toast.error(created.error || 'Failed to create provider')
+        return
+      }
+      const newId = created.provider.id
+
+      // 2. Validate the key (best-effort)
+      try {
+        const valRes = await fetch(`/api/admin/providers/${newId}/validate-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey }),
+        })
+        const valData = (await valRes.json().catch(() => ({}))) as ValidateKeyResult
+        if (valRes.ok && valData.valid) {
+          toast.success(`Connected. ${valData.modelsCount ?? 0} models available.`)
+        }
+      } catch {
+        /* validation best-effort */
+      }
+
+      // 3. Sync models (best-effort)
+      try {
+        const syncRes = await fetch(`/api/admin/providers/${newId}/sync-models`, { method: 'POST' })
+        const syncData = (await syncRes.json().catch(() => ({}))) as SyncModelsResult
+        if (syncRes.ok && (syncData.success || syncData.status === 'success' || syncData.status === 'partial')) {
+          toast.success(`Synced: ${syncData.modelsFound ?? 0} found, ${syncData.modelsAdded ?? 0} added`)
+        }
+      } catch {
+        /* sync best-effort */
+      }
+
+      toast.success(`${selected.name} connected`)
+      onAdded()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Connection failed')
+    } finally {
+      setConnecting(false)
+    }
+  }
+
+  const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
+    { value: 'bearer', label: 'Bearer Token' },
+    { value: 'x-api-key', label: 'X-API-Key Header' },
+    { value: 'custom-header', label: 'Custom Header' },
+    { value: 'query-param', label: 'Query Parameter' },
+  ]
+
+  const ALL_CAPS = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT', 'TTS', 'VISION']
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="h-4 w-4 text-amber-500" /> Add Provider
+          </DialogTitle>
+          <DialogDescription>
+            {selected
+              ? `Configure ${selected.name} connection. Validate your API key before saving.`
+              : 'Pick a provider from the registry to connect. Custom providers can be configured with any OpenAI-compatible endpoint.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2">
+          {!selected ? (
+            // Step 1: registry grid
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-[60vh] overflow-y-auto scroll-thin pr-1">
+              {PROVIDER_REGISTRY.map((meta) => (
+                <button
+                  key={meta.slug}
+                  onClick={() => pickProvider(meta)}
+                  className="text-left rounded-lg border p-3 hover:border-amber-500/40 hover:bg-amber-500/5 transition-colors flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-md shrink-0 text-white"
+                      style={{ backgroundColor: meta.color || '#6b7280' }}
+                    >
+                      <Server className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold truncate">{meta.name}</p>
+                      <code className="text-[9px] text-muted-foreground">{meta.slug}</code>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground line-clamp-2">{meta.description}</p>
+                  <div className="flex flex-wrap gap-1 mt-auto">
+                    {meta.capabilities.slice(0, 3).map((c) => (
+                      <Badge key={c} variant="secondary" className={cn('text-[8px] px-1 py-0', MODALITY_COLORS[c] || 'bg-muted')}>
+                        {c}
+                      </Badge>
+                    ))}
+                    {meta.capabilities.length > 3 && (
+                      <Badge variant="secondary" className="text-[8px] px-1 py-0 bg-muted text-muted-foreground">
+                        +{meta.capabilities.length - 3}
+                      </Badge>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            // Step 2: connect form
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-lg shrink-0 text-white"
+                  style={{ backgroundColor: selected.color || '#6b7280' }}
+                >
+                  <Server className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">{selected.name}</p>
+                  <p className="text-xs text-muted-foreground line-clamp-1">{selected.description}</p>
+                </div>
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(null)}>
+                  <ChevronLeft className="h-3 w-3 mr-1" /> Back
+                </Button>
+              </div>
+
+              {selected.isCustom && (
+                <>
+                  <div>
+                    <Label className="text-xs">Base URL</Label>
+                    <Input
+                      className="mt-1 font-mono text-xs"
+                      placeholder="https://api.example.com/v1"
+                      value={baseUrl}
+                      onChange={(e) => setBaseUrl(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Auth Type</Label>
+                    <Select value={authType} onValueChange={(v) => setAuthType(v as AuthType)}>
+                      <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {AUTH_TYPES.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Custom Headers (JSON, optional)</Label>
+                    <Textarea
+                      className="mt-1 font-mono text-xs"
+                      rows={3}
+                      placeholder='{"X-Custom-Header": "value"}'
+                      value={headers}
+                      onChange={(e) => setHeaders(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Capabilities</Label>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {ALL_CAPS.map((c) => {
+                        const Icon = MODALITY_ICONS[c]
+                        const on = capabilities.includes(c)
+                        return (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => toggleCap(c)}
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors',
+                              on
+                                ? (MODALITY_COLORS[c] || 'bg-amber-500/10 text-amber-600 border-amber-500/30')
+                                : 'bg-background text-muted-foreground hover:bg-muted',
+                            )}
+                          >
+                            {Icon && <Icon className="h-2.5 w-2.5" />}
+                            {c}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <Label className="text-xs">API Key</Label>
+                <Input
+                  type="password"
+                  className="mt-1 font-mono text-xs"
+                  placeholder="paste API key here…"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {selected.docsUrl ? (
+                    <a href={selected.docsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 hover:text-amber-600">
+                      Get your API key <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  ) : (
+                    'Your key will be encrypted at rest.'
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          {selected && (
+            <Button onClick={connect} disabled={connecting} className="bg-amber-600 hover:bg-amber-700 text-white">
+              {connecting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plug className="h-4 w-4 mr-1.5" />}
+              Validate &amp; Connect
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * EditProviderDialog — extended settings form
+ * -------------------------------------------------------------------------- */
+
 function EditProviderDialog({
-  provider, allProviders, saving, onClose, onSubmit,
+  provider, allProviders, onClose, onSaved,
 }: {
   provider: Provider
   allProviders: Provider[]
-  saving: boolean
   onClose: () => void
-  onSubmit: (patch: Record<string, unknown>) => void
+  onSaved: () => void
 }) {
   const [form, setForm] = useState({
-    baseUrl: '',
+    baseUrl: provider.baseUrl || '',
+    authType: (provider.authType as AuthType) || 'bearer',
+    headers: stringifyHeaders(provider.headers),
     dailyBudget: provider.dailyBudget || 0,
     monthlyBudget: provider.monthlyBudget || 0,
-    timeout: 30,
-    retries: 2,
-    concurrency: 5,
-    fallbackProviderId: '',
+    timeout: provider.timeout ?? 30,
+    retries: provider.retries ?? 2,
+    concurrency: provider.concurrency ?? 5,
+    priority: provider.priority ?? 0,
+    defaultStrategy: provider.defaultStrategy || 'smart',
+    fallbackProviderId: provider.fallbackProviderId || '',
     description: provider.description || '',
+    docsUrl: provider.docsUrl || '',
+    webhookSecret: provider.webhookSecret || '',
   })
+  const [saving, setSaving] = useState(false)
+
+  const AUTH_TYPES: Array<{ value: AuthType; label: string }> = [
+    { value: 'bearer', label: 'Bearer Token' },
+    { value: 'x-api-key', label: 'X-API-Key Header' },
+    { value: 'custom-header', label: 'Custom Header' },
+    { value: 'query-param', label: 'Query Parameter' },
+  ]
+
+  const STRATS = ['smart', 'cost', 'quality', 'round_robin', 'fast', 'balanced', 'best', 'creative', 'reasoning']
+
+  const submit = async () => {
+    setSaving(true)
+    // Validate headers JSON if provided
+    let headersValue: string | undefined
+    if (form.headers.trim()) {
+      try {
+        JSON.parse(form.headers)
+        headersValue = form.headers.trim()
+      } catch {
+        toast.error('Headers must be valid JSON')
+        setSaving(false)
+        return
+      }
+    }
+    const patch: Record<string, unknown> = {
+      id: provider.id,
+      baseUrl: form.baseUrl || null,
+      authType: form.authType,
+      headers: headersValue || null,
+      dailyBudget: Number(form.dailyBudget),
+      monthlyBudget: Number(form.monthlyBudget),
+      timeout: Number(form.timeout),
+      retries: Number(form.retries),
+      concurrency: Number(form.concurrency),
+      priority: Number(form.priority),
+      defaultStrategy: form.defaultStrategy,
+      fallbackProviderId: form.fallbackProviderId || null,
+      description: form.description || null,
+      docsUrl: form.docsUrl || null,
+      webhookSecret: form.webhookSecret || null,
+    }
+    const ok = await mutate('/api/admin/providers', 'PUT', patch, `${provider.name} updated`)
+    setSaving(false)
+    if (ok.ok) onSaved()
+  }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto scroll-thin">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="h-4 w-4 text-amber-500" /> Edit {provider.name}
           </DialogTitle>
-          <DialogDescription>Configure budgets, timeout, and fallback provider.</DialogDescription>
+          <DialogDescription>Configure connection, budgets, retries, and fallback provider.</DialogDescription>
         </DialogHeader>
+
         <div className="grid sm:grid-cols-2 gap-3 py-2">
           <div className="sm:col-span-2">
-            <Label className="text-xs">Base URL (optional)</Label>
+            <Label className="text-xs">Base URL</Label>
             <Input
               className="mt-1 font-mono text-xs"
               placeholder="https://api.example.com/v1"
@@ -924,6 +2071,38 @@ function EditProviderDialog({
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
             />
           </div>
+
+          <div>
+            <Label className="text-xs">Auth Type</Label>
+            <Select value={form.authType} onValueChange={(v) => setForm({ ...form, authType: v as AuthType })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {AUTH_TYPES.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label className="text-xs">Default Strategy</Label>
+            <Select value={form.defaultStrategy} onValueChange={(v) => setForm({ ...form, defaultStrategy: v })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STRATS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Custom Headers (JSON)</Label>
+            <Textarea
+              className="mt-1 font-mono text-xs"
+              rows={2}
+              placeholder='{"X-Org-Id": "abc123"}'
+              value={form.headers}
+              onChange={(e) => setForm({ ...form, headers: e.target.value })}
+            />
+          </div>
+
           <div>
             <Label className="text-xs">Daily Budget ($)</Label>
             <Input
@@ -942,6 +2121,7 @@ function EditProviderDialog({
               onChange={(e) => setForm({ ...form, monthlyBudget: Number(e.target.value) })}
             />
           </div>
+
           <div>
             <Label className="text-xs">Timeout (sec)</Label>
             <Input
@@ -960,6 +2140,7 @@ function EditProviderDialog({
               onChange={(e) => setForm({ ...form, retries: Number(e.target.value) })}
             />
           </div>
+
           <div>
             <Label className="text-xs">Concurrency</Label>
             <Input
@@ -969,6 +2150,16 @@ function EditProviderDialog({
               onChange={(e) => setForm({ ...form, concurrency: Number(e.target.value) })}
             />
           </div>
+          <div>
+            <Label className="text-xs">Priority (lower = higher)</Label>
+            <Input
+              type="number" min="0"
+              className="mt-1"
+              value={form.priority}
+              onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })}
+            />
+          </div>
+
           <div>
             <Label className="text-xs">Fallback Provider</Label>
             <Select
@@ -984,6 +2175,27 @@ function EditProviderDialog({
               </SelectContent>
             </Select>
           </div>
+
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Webhook Secret (optional)</Label>
+            <Input
+              className="mt-1 font-mono text-xs"
+              placeholder="whsec_…"
+              value={form.webhookSecret}
+              onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Docs URL</Label>
+            <Input
+              className="mt-1 font-mono text-xs"
+              placeholder="https://docs.example.com"
+              value={form.docsUrl}
+              onChange={(e) => setForm({ ...form, docsUrl: e.target.value })}
+            />
+          </div>
+
           <div className="sm:col-span-2">
             <Label className="text-xs">Description</Label>
             <Textarea
@@ -994,11 +2206,210 @@ function EditProviderDialog({
             />
           </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={saving} onClick={() => onSubmit(form)}>
+          <Button disabled={saving} onClick={submit} className="bg-amber-600 hover:bg-amber-700 text-white">
             {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
             Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * ModelsTable — expandable per-provider models table
+ * -------------------------------------------------------------------------- */
+
+function ModelsTable({
+  provider, onSyncModels, syncing, lastSync,
+}: {
+  provider: Provider
+  onSyncModels: () => void
+  syncing: boolean
+  lastSync: string | null | undefined
+}) {
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [editingPricing, setEditingPricing] = useState<ProviderModel | null>(null)
+
+  const toggleField = async (m: ProviderModel, field: 'isActive' | 'isDefault', v: boolean) => {
+    setTogglingId(m.id)
+    await mutate('/api/admin/models', 'PUT', { id: m.id, [field]: v }, `${m.displayName} ${field} ${v ? 'on' : 'off'}`)
+    setTogglingId(null)
+  }
+
+  const updatePricing = async (m: ProviderModel, inputCost: number, outputCost: number) => {
+    setTogglingId(m.id)
+    const ok = await mutate('/api/admin/models', 'PUT', {
+      id: m.id,
+      inputCostPer1k: inputCost,
+      outputCostPer1k: outputCost,
+      isCustomPricing: true,
+    }, `${m.displayName} pricing updated`)
+    setTogglingId(null)
+    if (ok.ok) setEditingPricing(null)
+  }
+
+  if (provider.models.length === 0) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">No models synced yet.</p>
+          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncing} onClick={onSyncModels}>
+            {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            Sync Now
+          </Button>
+        </div>
+        <EmptyState icon={Cpu} message="Click 'Sync Now' to discover available models." />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-muted-foreground">
+          {provider.models.length} models
+          {lastSync && <> · last synced {timeAgo(lastSync)}</>}
+        </p>
+        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={syncing} onClick={onSyncModels}>
+          {syncing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+          Refresh
+        </Button>
+      </div>
+
+      <div className="max-h-72 overflow-y-auto scroll-thin rounded-md border">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-card border-b">
+            <tr className="text-left text-[9px] uppercase tracking-wider text-muted-foreground">
+              <th className="px-2 py-1.5 font-medium">Name</th>
+              <th className="px-2 py-1.5 font-medium">Modality</th>
+              <th className="px-2 py-1.5 font-medium text-right">Context</th>
+              <th className="px-2 py-1.5 font-medium text-right">In/Out $/1k</th>
+              <th className="px-2 py-1.5 font-medium">Capabilities</th>
+              <th className="px-2 py-1.5 font-medium text-center">Active</th>
+              <th className="px-2 py-1.5 font-medium text-center">Default</th>
+            </tr>
+          </thead>
+          <tbody>
+            {provider.models.map((m) => (
+              <tr key={m.id} className="border-b last:border-0 hover:bg-muted/40">
+                <td className="px-2 py-1.5">
+                  <p className="font-medium truncate max-w-[120px]">{m.displayName}</p>
+                  <code className="text-[9px] text-muted-foreground truncate block max-w-[120px]">{m.name}</code>
+                </td>
+                <td className="px-2 py-1.5">
+                  <Badge variant="secondary" className={cn('text-[8px] px-1 py-0', MODALITY_COLORS[m.modality] || 'bg-muted')}>
+                    {m.modality}
+                  </Badge>
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[10px]">
+                  {fmtCtx(m.contextWindow)}
+                </td>
+                <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[10px]">
+                  <button
+                    onClick={() => setEditingPricing(m)}
+                    className="hover:text-amber-600 hover:underline"
+                    title="Click to edit pricing"
+                  >
+                    ${m.inputCostPer1k}/${m.outputCostPer1k}
+                  </button>
+                  {m.isCustomPricing && (
+                    <span className="ml-1 text-amber-500" title="Custom pricing">★</span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5">
+                  <CapIconBadges model={m} />
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  <Switch
+                    checked={m.isActive}
+                    disabled={togglingId === m.id}
+                    onCheckedChange={(v) => toggleField(m, 'isActive', v)}
+                  />
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  <button
+                    onClick={() => toggleField(m, 'isDefault', !m.isDefault)}
+                    disabled={togglingId === m.id}
+                    className="p-1"
+                    title={m.isDefault ? 'Default model' : 'Set as default'}
+                  >
+                    <Star className={cn('h-3.5 w-3.5', m.isDefault ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground hover:text-amber-500')} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editingPricing && (
+        <PricingEditDialog
+          model={editingPricing}
+          saving={togglingId === editingPricing.id}
+          onClose={() => setEditingPricing(null)}
+          onSave={updatePricing}
+        />
+      )}
+    </div>
+  )
+}
+
+function PricingEditDialog({
+  model, saving, onClose, onSave,
+}: {
+  model: ProviderModel
+  saving: boolean
+  onClose: () => void
+  onSave: (m: ProviderModel, inputCost: number, outputCost: number) => void
+}) {
+  const [inputCost, setInputCost] = useState(model.inputCostPer1k)
+  const [outputCost, setOutputCost] = useState(model.outputCostPer1k)
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-amber-500" /> Edit Pricing
+          </DialogTitle>
+          <DialogDescription>
+            Set custom pricing for <span className="font-medium text-amber-600">{model.displayName}</span>.
+            Once saved, the model is marked as having custom pricing.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-2 gap-3 py-2">
+          <div>
+            <Label className="text-xs">Input Cost ($/1k tokens)</Label>
+            <Input
+              type="number" step="0.0001" min="0"
+              className="mt-1"
+              value={inputCost}
+              onChange={(e) => setInputCost(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Output Cost ($/1k tokens)</Label>
+            <Input
+              type="number" step="0.0001" min="0"
+              className="mt-1"
+              value={outputCost}
+              onChange={(e) => setOutputCost(Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={saving}
+            onClick={() => onSave(model, inputCost, outputCost)}
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+            Save Pricing
           </Button>
         </DialogFooter>
       </DialogContent>
