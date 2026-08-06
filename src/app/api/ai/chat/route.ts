@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
-import { db } from '@/lib/db'
+import { generateText } from '@/lib/ai-engine'
+import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
 
@@ -20,10 +20,6 @@ const TOOL_SYSTEM_PROMPTS: Record<string, string> = {
   LANDING: 'You are CreatorOS Landing Page AI. You write high-converting landing page copy. Respond in Markdown with: hero headline + subhead, 3 benefit blocks, social proof section, feature list, pricing, FAQ (3), and final CTA.',
 }
 
-const CREDIT_COSTS: Record<string, number> = {
-  CHAT: 2, LESSON: 5, EMAIL: 4, SOCIAL: 3, BLOG: 8, SCRIPT: 10, PRODUCT: 6, LANDING: 7, COURSE: 15, SALES: 12,
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -34,37 +30,42 @@ export async function POST(req: NextRequest) {
     }
 
     const systemPrompt = TOOL_SYSTEM_PROMPTS[tool] || TOOL_SYSTEM_PROMPTS.CHAT
-    const cost = CREDIT_COSTS[tool] || 2
 
-    const zai = await ZAI.create()
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'assistant', content: systemPrompt },
-        ...messages.map((m) => ({ role: m.role, content: m.content })),
-      ],
-      thinking: { type: 'disabled' },
-    })
-
-    const content = completion.choices[0]?.message?.content || ''
-
-    try {
-      const user = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
-      if (user) {
-        await db.user.update({ where: { id: user.id }, data: { credits: { decrement: cost } } })
-        await db.creditTransaction.create({
-          data: { userId: user.id, amount: -cost, reason: `AI ${tool}` },
-        })
-      }
-    } catch {
-      // ignore
+    // Get the last user message as the input
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+    if (!lastUserMsg) {
+      return NextResponse.json({ error: 'No user message found' }, { status: 400 })
     }
 
-    return NextResponse.json({ content, creditsUsed: cost, model: 'zai-glm' })
+    const user = await getDemoUser()
+    if (!user) {
+      return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
+    }
+
+    // Use the AI Engine — routes through ApprovedModel, no hardcoded fallback
+    // For chat, we pass the full conversation as the input
+    const conversationInput = messages.length > 1
+      ? messages.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n')
+      : lastUserMsg.content
+
+    const result = await generateText({
+      toolSlug: 'AI_CHAT',
+      userInput: conversationInput,
+      userId: user.id,
+      workspaceId: DEMO_WORKSPACE_ID,
+      systemPrompt,
+      title: lastUserMsg.content.slice(0, 80),
+      routeCategory: 'WRITING',
+    })
+
+    return NextResponse.json({
+      content: result.raw,
+      creditsUsed: result.creditsUsed,
+      model: result.modelId || 'routed',
+    })
   } catch (e) {
     console.error('AI chat error:', e)
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'AI request failed' },
-      { status: 500 }
-    )
+    const { status, message } = mapEngineError(e)
+    return NextResponse.json({ error: message }, { status })
   }
 }

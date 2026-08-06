@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
-import { db } from '@/lib/db'
+import { generateText } from '@/lib/ai-engine'
+import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120
 
 const ACTION_PROMPTS: Record<string, string> = {
   REWRITE: 'Rewrite the following content to be clearer and more compelling. Keep the same JSON structure and keys. Respond with ONLY the JSON.',
@@ -30,29 +30,27 @@ export async function POST(req: NextRequest) {
     const instruction = ACTION_PROMPTS[action]
     if (!instruction) return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
-    const user = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
+    const user = await getDemoUser()
     if (!user) return NextResponse.json({ error: 'No user' }, { status: 400 })
-    const cost = 2
-    if (user.credits < cost) return NextResponse.json({ error: 'Insufficient credits' }, { status: 402 })
 
-    const zai = await ZAI.create()
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'assistant', content: `You are an expert copywriter for creator businesses. You improve ${sectionType || 'page'} section content. ${instruction}` },
-        { role: 'user', content: JSON.stringify(content, null, 2) },
-      ],
-      thinking: { type: 'disabled' },
+    // Use the AI Engine — routes through ApprovedModel
+    const result = await generateText({
+      toolSlug: 'AI_CHAT',  // reuse chat tool for section rewrite
+      userInput: JSON.stringify(content, null, 2),
+      userId: user.id,
+      workspaceId: DEMO_WORKSPACE_ID,
+      systemPrompt: `You are an expert copywriter for creator businesses. You improve ${sectionType || 'page'} section content. ${instruction}`,
+      title: `Section ${action}`,
+      routeCategory: 'WEBSITE',
     })
-    const raw = completion.choices[0]?.message?.content || ''
-    const newContent = parseJSON(raw)
+
+    const newContent = parseJSON(result.raw)
     if (!newContent) return NextResponse.json({ error: 'AI failed to produce valid content. Please try again.' }, { status: 502 })
 
-    await db.user.update({ where: { id: user.id }, data: { credits: { decrement: cost } } })
-    await db.creditTransaction.create({ data: { userId: user.id, amount: -cost, reason: `AI section ${action}` } })
-
-    return NextResponse.json({ success: true, content: newContent, creditsUsed: cost, remainingCredits: user.credits - cost })
+    return NextResponse.json({ success: true, content: newContent, creditsUsed: result.creditsUsed, remainingCredits: result.remainingCredits })
   } catch (e) {
     console.error('Section rewrite error:', e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed' }, { status: 500 })
+    const { status, message } = mapEngineError(e)
+    return NextResponse.json({ error: message }, { status })
   }
 }

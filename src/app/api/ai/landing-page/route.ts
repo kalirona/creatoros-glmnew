@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
+import { generateText } from '@/lib/ai-engine'
+import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 120
 
 interface LandingSection { type: string; content: Record<string, unknown> }
 interface LandingData {
@@ -55,23 +56,21 @@ export async function POST(req: NextRequest) {
     const { selling, category } = body as { selling?: string; category?: string }
     if (!selling?.trim()) return NextResponse.json({ error: 'What are you selling? is required' }, { status: 400 })
 
-    const tool = await db.aiTool.findUnique({ where: { slug: 'LANDING_PAGE_GENERATOR' } })
-    if (!tool) return NextResponse.json({ error: 'Landing page tool not configured' }, { status: 404 })
-
-    const user = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
+    const user = await getDemoUser()
     if (!user) return NextResponse.json({ error: 'No user' }, { status: 400 })
-    if (user.credits < tool.creditCost) return NextResponse.json({ error: `Insufficient credits (${tool.creditCost} required, ${user.credits} available)` }, { status: 402 })
 
-    const zai = await ZAI.create()
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: 'assistant', content: SYSTEM_PROMPT },
-        { role: 'user', content: `What I'm selling: ${selling}\nCategory: ${category || 'General'}` },
-      ],
-      thinking: { type: 'disabled' },
+    // Use the AI Engine — routes through ApprovedModel
+    const result = await generateText({
+      toolSlug: 'LANDING_PAGE_GENERATOR',
+      userInput: `What I'm selling: ${selling}\nCategory: ${category || 'General'}`,
+      userId: user.id,
+      workspaceId: DEMO_WORKSPACE_ID,
+      systemPrompt: SYSTEM_PROMPT,
+      title: selling.slice(0, 60),
+      routeCategory: 'WEBSITE',
     })
-    const raw = completion.choices[0]?.message?.content || ''
-    const data = parseStructured(raw)
+
+    const data = parseStructured(result.raw)
     if (!data || !Array.isArray(data.sections)) return NextResponse.json({ error: 'AI failed to generate valid landing page. Please try again.' }, { status: 502 })
 
     // Persist: create a Page + PageSections in DB
@@ -91,18 +90,10 @@ export async function POST(req: NextRequest) {
       await db.pageSection.create({ data: { pageId: page.id, type: sec.type, content: JSON.stringify(sec.content), position: i } })
     }
 
-    // Deduct credits
-    await db.user.update({ where: { id: user.id }, data: { credits: { decrement: tool.creditCost } } })
-    await db.creditTransaction.create({ data: { userId: user.id, amount: -tool.creditCost, reason: 'AI Landing Page' } })
-
-    // Record generation
-    await db.aiGeneration.create({
-      data: { userId: user.id, toolId: tool.id, toolSlug: tool.slug, title, input: selling, output: raw, structured: JSON.stringify(data), status: 'COMPLETED', creditsUsed: tool.creditCost },
-    })
-
-    return NextResponse.json({ success: true, pageId: page.id, pageSlug: slug, sections: data.sections, seo: data.seo, creditsUsed: tool.creditCost, remainingCredits: user.credits - tool.creditCost })
+    return NextResponse.json({ success: true, pageId: page.id, pageSlug: slug, sections: data.sections, seo: data.seo, creditsUsed: result.creditsUsed, remainingCredits: result.remainingCredits })
   } catch (e) {
     console.error('AI landing page error:', e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed' }, { status: 500 })
+    const { status, message } = mapEngineError(e)
+    return NextResponse.json({ error: message }, { status })
   }
 }
