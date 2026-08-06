@@ -1720,3 +1720,58 @@ Browser-Verified:
 - ✅ Image generation works (returns real image asset)
 - ✅ Lint: 0 errors
 - ✅ TypeScript: 0 errors
+
+---
+Task ID: PHASE-AI-08
+Agent: Main (Z.ai Code)
+Task: PHASE AI-08 — Make AI Routing 100% Real (No Mock Logic, No Hardcoded Models)
+
+Work Log:
+- Created comprehensive AI System Report at /home/z/my-project/AI_SYSTEM_REPORT.md documenting:
+  * Complete architecture (Provider Catalog → ApprovedModel → Routing → Engine → Adapter)
+  * How AI Chat, Image, Video, Document, Course, Marketing, Landing Page, Section Rewrite all work
+  * All 13 providers, 50 approved models, 14 routing categories
+  * Security: API keys masked, audit logged, rate limited, credit validated
+  * Current configuration summary
+
+- Complete AI routing audit performed:
+  * ✅ ZERO direct ZAI.create() calls in any API route (all 6 routes use engine)
+  * ✅ ZERO hardcoded 'zai'/'glm' fallbacks in engine.ts
+  * ✅ Router ONLY reads from ApprovedModel table (8 references, 0 to AiModel.isActive)
+  * ✅ ZERO withFallback() calls (removed)
+  * ✅ ZERO hardcoded model names (glm, gpt, claude, gemini, deepseek)
+  * ✅ All 6 API routes (chat, generate, images, videos, landing-page, section-rewrite) use generateText/generateImage/generateVideo from engine
+  * ✅ publish-course route has no ZAI calls
+  * ✅ System prompts from database injected into every request
+  * ✅ Failover: if primary adapter fails, tries other approved providers with same modality
+  * ✅ When all models disabled → proper error "No enabled model available" (no silent fallback)
+
+- Approved Kling Video (VIDEO modality from Fal AI) so video generation works
+- Activated Fal AI provider for VIDEO routing
+
+- Browser-tested all 8 AI features end-to-end:
+  * ✅ AI Chat — returns real response
+  * ✅ Blog Generation — returns structured JSON with plain text (no HTML)
+  * ✅ Course Generation — returns structured JSON with modules
+  * ✅ Email Generation — returns structured JSON with subject lines + body
+  * ✅ Image Generation — returns real base64 image (39110 chars)
+  * ✅ Video Generation — creates AiJob in QUEUED state
+  * ✅ Landing Page AI — creates Page + PageSections in database
+  * ✅ Section Rewrite AI — returns rewritten content
+
+- Error handling test:
+  * Disabled all 6 TEXT approved models → chat returns "No enabled model available for WRITING. Please ask your administrator to approve a model for this capability."
+  * Re-enabled → chat works again
+  * No silent GLM fallback, no hardcoded model bypass
+
+Stage Summary:
+- Lint: 0 errors
+- TypeScript: 0 errors
+- Server: HTTP 200
+- All 8 AI features working end-to-end
+- Routing is 100% real: every request goes through ApprovedModel → provider adapter
+- No hardcoded models, no fake fallbacks, no mock responses
+- Proper error when no model available
+- System prompts from database injected into every request
+- Failover between approved providers
+- PHASE AI-08 COMPLETE
