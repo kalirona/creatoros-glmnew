@@ -1,4 +1,6 @@
 'use client'
+import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/app/sidebar'
 import { Topbar } from '@/components/app/topbar'
@@ -6,28 +8,32 @@ import { CommandPalette } from '@/components/app/command-palette'
 import { RbacGuard } from '@/components/app/rbac-guard'
 import { useAppStore } from '@/store/app-store'
 import { DashboardModule } from '@/components/modules/dashboard'
-import { AiStudioModule } from '@/components/modules/ai-studio'
-import { CoursesModule } from '@/components/modules/courses'
-import { CommunityModule } from '@/components/modules/community'
-import { ProductsModule } from '@/components/modules/products'
-import { StoreModule } from '@/components/modules/store'
-import { MembershipModule } from '@/components/modules/membership'
-import { EmailModule } from '@/components/modules/email'
-import { CrmModule } from '@/components/modules/crm'
-import { AffiliatesModule } from '@/components/modules/affiliates'
-import { AnalyticsModule } from '@/components/modules/analytics'
-import { PagesFunnelsModule } from '@/components/modules/pages-funnels'
-import { SupportModule } from '@/components/modules/support'
-import { SettingsModule } from '@/components/modules/settings'
-import { AiSettingsModule } from '@/components/modules/ai-settings'
-import { SystemSettingsModule } from '@/components/modules/system-settings'
-import { CertificatesModule } from '@/components/modules/certificates'
-import { MediaLibraryModule } from '@/components/modules/media-library'
-import { AutomationModule } from '@/components/modules/automation'
-import { CourseBuilder } from '@/components/course-builder/builder'
 import type { ModuleId } from '@/lib/nav'
 
-const MODULES: Record<ModuleId, React.ComponentType> = {
+// Lazy-load all modules EXCEPT dashboard (which is the default landing page).
+// This dramatically reduces initial bundle size and memory usage,
+// preventing OOM kills in the sandbox.
+const AiStudioModule = dynamic(() => import('@/components/modules/ai-studio').then(m => m.AiStudioModule), { loading: () => <Skeleton /> })
+const CoursesModule = dynamic(() => import('@/components/modules/courses').then(m => m.CoursesModule), { loading: () => <Skeleton /> })
+const CommunityModule = dynamic(() => import('@/components/modules/community').then(m => m.CommunityModule), { loading: () => <Skeleton /> })
+const ProductsModule = dynamic(() => import('@/components/modules/products').then(m => m.ProductsModule), { loading: () => <Skeleton /> })
+const StoreModule = dynamic(() => import('@/components/modules/store').then(m => m.StoreModule), { loading: () => <Skeleton /> })
+const MembershipModule = dynamic(() => import('@/components/modules/membership').then(m => m.MembershipModule), { loading: () => <Skeleton /> })
+const EmailModule = dynamic(() => import('@/components/modules/email').then(m => m.EmailModule), { loading: () => <Skeleton /> })
+const CrmModule = dynamic(() => import('@/components/modules/crm').then(m => m.CrmModule), { loading: () => <Skeleton /> })
+const AffiliatesModule = dynamic(() => import('@/components/modules/affiliates').then(m => m.AffiliatesModule), { loading: () => <Skeleton /> })
+const AnalyticsModule = dynamic(() => import('@/components/modules/analytics').then(m => m.AnalyticsModule), { loading: () => <Skeleton /> })
+const PagesFunnelsModule = dynamic(() => import('@/components/modules/pages-funnels').then(m => m.PagesFunnelsModule), { loading: () => <Skeleton /> })
+const SupportModule = dynamic(() => import('@/components/modules/support').then(m => m.SupportModule), { loading: () => <Skeleton /> })
+const SettingsModule = dynamic(() => import('@/components/modules/settings').then(m => m.SettingsModule), { loading: () => <Skeleton /> })
+const AiSettingsModule = dynamic(() => import('@/components/modules/ai-settings').then(m => m.AiSettingsModule), { loading: () => <Skeleton /> })
+const SystemSettingsModule = dynamic(() => import('@/components/modules/system-settings').then(m => m.SystemSettingsModule), { loading: () => <Skeleton /> })
+const CertificatesModule = dynamic(() => import('@/components/modules/certificates').then(m => m.CertificatesModule), { loading: () => <Skeleton /> })
+const MediaLibraryModule = dynamic(() => import('@/components/modules/media-library').then(m => m.MediaLibraryModule), { loading: () => <Skeleton /> })
+const AutomationModule = dynamic(() => import('@/components/modules/automation').then(m => m.AutomationModule), { loading: () => <Skeleton /> })
+const CourseBuilder = dynamic(() => import('@/components/course-builder/builder').then(m => m.CourseBuilder), { loading: () => <Skeleton /> })
+
+const MODULES: Partial<Record<ModuleId, React.ComponentType>> = {
   'dashboard': DashboardModule,
   'ai-studio': AiStudioModule,
   'courses': CoursesModule,
@@ -52,6 +58,16 @@ const MODULES: Record<ModuleId, React.ComponentType> = {
 
 // Platform modules that require RBAC guard
 const PLATFORM_MODULES: ModuleId[] = ['admin', 'ai-settings', 'system-settings']
+
+function Skeleton() {
+  return (
+    <div className="space-y-4 p-4">
+      <div className="h-24 rounded-xl bg-muted animate-pulse" />
+      <div className="h-48 rounded-xl bg-muted animate-pulse" />
+      <div className="h-48 rounded-xl bg-muted animate-pulse" />
+    </div>
+  )
+}
 
 export default function Home() {
   const activeModule = useAppStore((s) => s.activeModule)
