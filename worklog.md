@@ -1690,3 +1690,33 @@ Stage Summary:
 - When no approved model exists, throws a meaningful error (not silent GLM fallback)
 - Existing AI features (chat, documents, courses, landing pages, section rewrite, images) all use the same engine
 - PHASE X ROUTING AUDIT COMPLETE
+
+---
+Task ID: FIX-BLOG-CHAT-IMAGE
+Agent: Main (Z.ai Code)
+Task: Fix blog generator HTML output, make general AI chat unrestricted, fix image generation error
+
+Work Log:
+- Fix 1: Blog generator outputting HTML instead of plain text
+  * Updated BLOG_WRITER system prompt in both seed file and database to explicitly say: "CRITICAL: All text values must be PLAIN TEXT. Do NOT use HTML tags (no <p>, <h1>, <br>, etc.). Do NOT use Markdown. Write in natural, readable prose."
+  * Verified: generated blog has no HTML tags in any field (title, intro, sections.body, conclusion, cta)
+
+- Fix 2: General AI chat limited to business topics
+  * Updated CHAT system prompt in both /api/ai/chat/route.ts and AI_CHAT tool in database
+  * Old: "expert business assistant for digital creators, course creators, and online entrepreneurs"
+  * New: "helpful, knowledgeable, and versatile AI assistant. You can answer questions on ANY topic — not just business"
+  * Verified: "What is 2+2?" → "Four" (general question answered correctly)
+
+- Fix 3: Image generation failing with "AI service is temporarily unavailable"
+  * Root cause: 0 approved IMAGE models — routing engine threw "No enabled image model available" but mapEngineError() mapped it to generic "AI service is temporarily unavailable"
+  * Fix A: Approved CogView 3 Plus (IMAGE modality from GLM provider) via /api/admin/approved-models
+  * Fix B: Updated mapEngineError() to show actual error message for "no enabled model" errors instead of generic "temporarily unavailable"
+  * Removed overly broad 'model' and 'provider' keyword matching that was catching legitimate errors
+  * Verified: image generation returns asset with 39110-char base64 URL, width 1024, cost 3 credits
+
+Browser-Verified:
+- ✅ AI Chat answers general questions (not business-only)
+- ✅ Blog generator outputs plain text (no HTML tags)
+- ✅ Image generation works (returns real image asset)
+- ✅ Lint: 0 errors
+- ✅ TypeScript: 0 errors

@@ -51,19 +51,29 @@ export function mapEngineError(e: unknown): CreatorError {
       message: "You're generating a bit too fast. Please wait a moment and try again.",
     }
   }
-  // No provider available
+  // No model/provider available — show the actual message so the user knows what to do
   if (
+    lower.includes('no enabled model') ||
+    lower.includes('no enabled image') ||
+    lower.includes('no enabled video') ||
+    lower.includes('no available ai provider') ||
     lower.includes('no ai provider') ||
     lower.includes('no image provider') ||
     lower.includes('no video provider') ||
-    lower.includes('no active') ||
-    lower.includes('provider') ||
+    lower.includes('no active')
+  ) {
+    return {
+      status: 503,
+      message: msg, // Show the actual error — tells admin to approve a model
+    }
+  }
+  // Provider-specific errors (API key, adapter, provider name) — sanitize
+  if (
     lower.includes('api key') ||
     lower.includes('openrouter') ||
     lower.includes('fal') ||
     lower.includes('elevenlabs') ||
     lower.includes('deepgram') ||
-    lower.includes('model') ||
     lower.includes('adapter')
   ) {
     return {

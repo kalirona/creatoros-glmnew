@@ -161,6 +161,8 @@ Respond with ONLY the JSON.`,
   "conclusion": "string",
   "cta": "string"
 }
+
+CRITICAL: All text values must be PLAIN TEXT. Do NOT use HTML tags (no <p>, <h1>, <br>, etc.). Do NOT use Markdown. Write in natural, readable prose.
 Respond with ONLY the JSON.`,
   },
   {
