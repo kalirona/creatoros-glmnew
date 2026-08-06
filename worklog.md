@@ -1844,3 +1844,35 @@ Stage Summary:
 - TestConnectionDialog shows detailed success/failure information
 - Health check no longer fooled by public /models endpoints
 - PHASE AI-08 STEP 3+4 COMPLETE
+
+---
+Task ID: FIX-IMAGE-STYLE-WEBSITE-VIDEO
+Agent: Main (Z.ai Code)
+Task: Fix image style selector spacing, remove Website tab from AI Studio, remove 'Use in...' from image dialog, approve Fal AI image models, write video report
+
+Work Log:
+- Fixed image style selector: changed from 5-column tiny buttons (h-3.5 w-3.5, text-[8px]) to 2-column larger buttons (h-4 w-4, text-xs, p-2.5, rounded-lg) with better spacing
+- Removed Website tab from AI Studio:
+  * Removed 'website' from StudioTab type
+  * Removed Website tab from TABS array
+  * Removed <TabsContent value="website"> from render
+  * Removed "Generate Landing Page" quick action from Dashboard
+  * WebsiteTab component preserved (not deleted — just not rendered)
+- Removed "Use in..." section from ImageDetailDialog:
+  * Removed the grid of Use In buttons (Course, Website, Blog, Product, Community, Email, Marketing)
+  * Dialog now shows only: Quick Actions (Upscale, Remove BG, Variations, Crop, Edit with AI) + metadata + prompt
+  * applyUseIn function preserved in code (not called from dialog anymore)
+- Approved Fal AI image models for image generation:
+  * Flux Pro (IMAGE) — approved
+  * Flux Dev (IMAGE) — approved
+  * SDXL (IMAGE) — approved
+  * Now 4 IMAGE models approved: CogView 3 Plus (GLM), Flux Pro (Fal AI), Flux Dev (Fal AI), SDXL (Fal AI)
+- Created VIDEO_MODELS_REPORT.md with:
+  * Available video models and costs
+  * Tier 1 (cheapest): SDXL Turbo Video, Stable Video Diffusion, AnimateDiff
+  * Tier 2 (best value): Kling 1.6, Flux Schnell Video, LTX Video
+  * Tier 3 (premium): Kling Pro, Veo 3, Runway Gen-3
+  * Recommendation: Kling Video (currently approved) for production, LTX Video for budget
+- Verified image generation works: tested via API — returns asset with base64 URL
+- Lint: 0 errors
+- TypeScript: 0 errors

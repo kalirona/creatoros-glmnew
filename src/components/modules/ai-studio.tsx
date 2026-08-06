@@ -48,7 +48,7 @@ import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 
 type StudioTab =
   | 'dashboard' | 'chat' | 'documents' | 'images' | 'videos'
-  | 'courses' | 'website' | 'marketing' | 'media-library' | 'history' | 'settings'
+  | 'courses' | 'marketing' | 'media-library' | 'history' | 'settings'
 
 const TABS: { id: StudioTab; label: string; icon: LucideIcon }[] = [
   { id: 'dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
@@ -57,7 +57,6 @@ const TABS: { id: StudioTab; label: string; icon: LucideIcon }[] = [
   { id: 'images',        label: 'Images',       icon: ImageIcon },
   { id: 'videos',        label: 'Videos',       icon: Film },
   { id: 'courses',       label: 'Courses',      icon: GraduationCap },
-  { id: 'website',       label: 'Website',      icon: Globe },
   { id: 'marketing',     label: 'Marketing',    icon: Mail },
   { id: 'media-library', label: 'Media Library', icon: FolderOpen },
   { id: 'history',       label: 'History',      icon: History },
@@ -341,7 +340,6 @@ export function AiStudioModule() {
         <TabsContent value="images"><ImagesTab onCreditsUpdate={setCredits} /></TabsContent>
         <TabsContent value="videos"><VideosTab onCreditsUpdate={setCredits} /></TabsContent>
         <TabsContent value="courses"><CoursesTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
-        <TabsContent value="website"><WebsiteTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
         <TabsContent value="marketing"><MarketingTab onCreditsUpdate={setCredits} /></TabsContent>
         <TabsContent value="media-library"><MediaLibraryTab onNavigate={setTab} /></TabsContent>
         <TabsContent value="history"><HistoryTab /></TabsContent>
@@ -369,7 +367,6 @@ function DashboardTab({ credits, onNavigate }: { credits: number; onNavigate: (t
     { label: 'Generate Course', desc: 'AI builds a complete course outline', icon: GraduationCap, tab: 'courses', color: 'bg-emerald-500/10 text-emerald-600' },
     { label: 'Generate Image', desc: 'Create custom AI imagery', icon: ImageIcon, tab: 'images', color: 'bg-amber-500/10 text-amber-600' },
     { label: 'Generate Video', desc: 'Short-form video for social', icon: Film, tab: 'videos', color: 'bg-rose-500/10 text-rose-600' },
-    { label: 'Generate Landing Page', desc: 'High-converting page copy', icon: Globe, tab: 'website', color: 'bg-violet-500/10 text-violet-600' },
     { label: 'Generate Email', desc: 'Email campaign sequences', icon: Mail, tab: 'marketing', color: 'bg-cyan-500/10 text-cyan-600' },
     { label: 'Generate Blog', desc: 'SEO-friendly blog content', icon: FileText, tab: 'documents', color: 'bg-pink-500/10 text-pink-600' },
   ]
@@ -784,16 +781,16 @@ function ImagesTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => void }
 
             <div>
               <Label className="text-xs font-medium">Style</Label>
-              <div className="mt-1.5 grid grid-cols-5 gap-1.5">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 {IMAGE_STYLES_UI.map(s => {
                   const Icon = s.icon
                   return (
                     <button key={s.value} type="button" onClick={() => setStyle(s.value)} disabled={loading}
                       title={s.value}
-                      className={cn('flex flex-col items-center gap-1 rounded-md border p-1.5 transition',
+                      className={cn('flex items-center gap-2 rounded-lg border p-2.5 transition text-left',
                         style === s.value ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}>
-                      <Icon className="h-3.5 w-3.5" />
-                      <span className="text-[8px] font-medium leading-none truncate w-full text-center">{s.value}</span>
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span className="text-xs font-medium leading-none">{s.value}</span>
                     </button>
                   )
                 })}
@@ -1082,21 +1079,6 @@ function ImageDetailDialog({
                   {actionLoading === 'edit' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand className="h-3.5 w-3.5" />}
                   Edit with AI
                 </Button>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Use in...</p>
-              <div className="grid grid-cols-2 gap-1.5">
-                {USE_IN_MODULES.map(m => {
-                  const Icon = m.icon
-                  return (
-                    <Button key={m.value} variant="outline" size="sm" className="h-auto py-2 text-[10px] justify-start gap-1.5" disabled={actionLoading === `use-${m.value}`}
-                      onClick={() => applyUseIn(m.value)}>
-                      <Icon className="h-3 w-3" /> {m.label}
-                    </Button>
-                  )
-                })}
               </div>
             </div>
 
