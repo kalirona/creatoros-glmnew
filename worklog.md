@@ -1775,3 +1775,72 @@ Stage Summary:
 - System prompts from database injected into every request
 - Failover between approved providers
 - PHASE AI-08 COMPLETE
+
+---
+Task ID: PHASE-AI-08-STEP3-4
+Agent: Main (Z.ai Code)
+Task: Fix API Key Validation (STEP 3) and Sync Models (STEP 4) — make 100% real
+
+Work Log:
+- STEP 3: API Key Validation — Fixed to use REAL authenticated endpoints
+  * GLM/Z.ai validation: makes real z.ai SDK chat completion request, measures latency, classifies errors (401/403/429/timeout)
+  * HTTP-based providers (OpenRouter, OpenAI, etc.): uses adapter.validateKey() which calls AUTHENTICATED endpoints:
+    - OpenRouter: GET /key (requires Bearer auth — NOT public /models)
+    - OpenAI: GET /models (requires Bearer auth)
+    - Anthropic: GET /models (requires x-api-key)
+    - Google Gemini: GET /models?key=KEY
+    - Fal AI: GET /users/me (requires Key auth)
+  * Improved error messages:
+    - 401 → "Invalid API key. The key was rejected by the provider (HTTP 401 — Unauthorized)."
+    - 403 → "API key expired or unauthorized. The provider rejected the key (HTTP 403 — Forbidden)."
+    - 429 → "Rate limited (HTTP 429). You have sent too many requests — try again later."
+    - 404 → "Endpoint not found (HTTP 404). The base URL may be incorrect."
+    - timeout → "Request timed out after Ns. The provider did not respond."
+    - network → "Network error — could not reach the provider."
+  * GLM validation returns latency in message: "Connected. 3 models available. Latency: 4567ms"
+
+- STEP 3: Test Connection Dialog — Enhanced with detailed success/failure display
+  * Success: shows "✓ Provider Connected" banner with green check, provider name, latency, models found, version, quota, date tested
+  * Failure: shows specific error type with classified title:
+    - "Invalid API Key" (HTTP 401)
+    - "API Key Expired" (HTTP 403)
+    - "Rate Limited" (HTTP 429)
+    - "Invalid Endpoint" (HTTP 404)
+    - "Request Timeout"
+    - "Network Error"
+    - "Configuration Missing"
+  * Added classifyError() function that maps error messages to user-friendly titles + HTTP status badges
+  * Dialog widened to sm:max-w-2xl for better display
+
+- STEP 3: Health Check — Fixed to use adapter.validateKey() instead of public /models
+  * OLD: health check called GET /models which is PUBLIC on OpenRouter (returns 200 without auth)
+  * NEW: health check calls adapter.validateKey() which uses AUTHENTICATED endpoints (e.g., OpenRouter /key)
+  * Exported ADAPTERS from discovery.ts so health.ts can import it
+  * Verified: OpenRouter with fake key → status=down, error="Invalid API key. HTTP 401"
+  * Verified: OpenRouter with no key → status=down, error="No API key configured"
+
+- STEP 4: Sync Models — Verified only real provider models are stored
+  * GLM/Z.ai: 3 models (GLM-4 Plus, GLM-4 Flash, CogView 3 Plus) — real z.ai SDK models
+  * OpenRouter: 343 models — fetched from REAL /models API endpoint
+  * Fal AI: 6 models (Flux Pro, Flux Dev, Flux Schnell, Kling Video, SDXL, Fast SDXL) — real Fal AI model IDs (no /models endpoint available)
+  * Deepgram: 2 models (Nova 2, Nova 3) — real Deepgram model names (no /models endpoint)
+  * Sync never auto-enables models (isActive=false on new models)
+  * Admin must approve via Provider Catalog → Review Screen → Approve button
+
+Browser-Verified:
+- ✅ Fake key on OpenRouter: fails with "Invalid API key. The key was rejected by the provider (HTTP 401 — Unauthorized)."
+- ✅ No key on OpenRouter: fails with "No API key configured. Add and validate an API key to run a real health check."
+- ✅ GLM/Z.ai: validates via real z.ai SDK request (measures latency, classifies errors)
+- ✅ TestConnectionDialog shows detailed success: "✓ Provider Connected" + provider, latency, models, version, date
+- ✅ TestConnectionDialog shows detailed failure: specific error title + HTTP status badge + error message
+- ✅ Health check uses authenticated endpoint (not public /models)
+- ✅ Lint: 0 errors
+- ✅ TypeScript: 0 errors
+
+Stage Summary:
+- API key validation is 100% real — fake keys always fail with specific error messages
+- Test Connection uses authenticated endpoints (not public /models)
+- Sync only stores real provider models
+- TestConnectionDialog shows detailed success/failure information
+- Health check no longer fooled by public /models endpoints
+- PHASE AI-08 STEP 3+4 COMPLETE

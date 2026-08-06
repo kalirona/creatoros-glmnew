@@ -1304,13 +1304,23 @@ function TestConnectionDialog({
     down: 'bg-red-500/10 text-red-600',
     unknown: 'bg-muted text-muted-foreground',
   }
+  const statusIcon: Record<string, string> = {
+    healthy: '✓',
+    degraded: '⚠',
+    down: '✗',
+    unknown: '?',
+  }
   const allTests = ['health', 'auth', 'prompt', 'streaming', 'tool']
   const passed = result?.testsPassed || []
   const run = result?.testsRun || []
+  const testDate = new Date().toLocaleString()
+
+  // Classify error type for display
+  const errorType = result?.error ? classifyError(result.error) : null
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-4 w-4 text-amber-500" /> Test Connection
@@ -1326,45 +1336,96 @@ function TestConnectionDialog({
             <div className="flex flex-col items-center justify-center py-8 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-amber-500" />
               <p className="text-sm text-muted-foreground">Running health check…</p>
+              <p className="text-xs text-muted-foreground">Making a real request to {provider?.name}</p>
             </div>
           ) : result?.error && !result.status ? (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-red-600">Connection failed</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{result.error}</p>
+            // ── Connection FAILED — show specific error type ──────────────
+            <div className="space-y-3">
+              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 shrink-0">
+                    <XCircle className="h-5 w-5 text-red-500" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-red-600">
+                      {errorType?.title || 'Connection Failed'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">{result.error}</p>
+                    {errorType && (
+                      <Badge variant="secondary" className={cn('text-[9px] mt-2', errorType.color)}>
+                        {errorType.label}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Provider</p>
+                  <p className="text-xs font-medium">{provider?.name || '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Date Tested</p>
+                  <p className="text-xs font-medium">{testDate}</p>
+                </div>
               </div>
             </div>
           ) : (
+            // ── Connection SUCCESS — show detailed info ────────────────────
             <>
-              {/* Status banner */}
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-2">
+              {/* Success banner */}
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/10 shrink-0">
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-emerald-600">✓ Provider Connected</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {provider?.name} is healthy and responding to requests.
+                    </p>
+                  </div>
                   <Badge variant="secondary" className={cn('text-xs font-medium uppercase', statusColor[status] || statusColor.unknown)}>
-                    {status}
+                    {statusIcon[status]} {status}
                   </Badge>
-                  <span className="text-sm font-medium">{provider?.name}</span>
                 </div>
-                {result?.latencyMs != null && (
-                  <Badge variant="secondary" className={cn('text-xs font-mono', latencyColor(result.latencyMs))}>
-                    <Timer className="h-3 w-3 mr-1" /> {result.latencyMs}ms
-                  </Badge>
-                )}
               </div>
 
-              {/* Stat cards */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-md bg-muted/50 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Provider Version</p>
-                  <p className="text-xs font-semibold">{result?.providerVersion || '—'}</p>
+              {/* Detailed stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Provider</p>
+                  <p className="text-xs font-semibold truncate">{provider?.name || '—'}</p>
                 </div>
-                <div className="rounded-md bg-muted/50 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Quota Remaining</p>
-                  <p className="text-xs font-semibold truncate">{result?.quotaRemaining || '—'}</p>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Latency</p>
+                  <p className="text-xs font-semibold tabular-nums">
+                    {result?.latencyMs != null ? (
+                      <span className={latencyColor(result.latencyMs)}>
+                        {result.latencyMs}ms
+                      </span>
+                    ) : '—'}
+                  </p>
                 </div>
-                <div className="rounded-md bg-muted/50 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">Model Count</p>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Models Found</p>
                   <p className="text-xs font-semibold tabular-nums">{result?.modelCount ?? '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2.5">
+                  <p className="text-[10px] text-muted-foreground">Version</p>
+                  <p className="text-xs font-semibold truncate">{result?.providerVersion || '—'}</p>
+                </div>
+              </div>
+
+              {/* Additional info */}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Quota Remaining</p>
+                  <p className="text-xs font-medium truncate">{result?.quotaRemaining || '—'}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Date Tested</p>
+                  <p className="text-xs font-medium">{testDate}</p>
                 </div>
               </div>
 
@@ -1411,6 +1472,33 @@ function TestConnectionDialog({
       </DialogContent>
     </Dialog>
   )
+}
+
+// Classify error messages into user-friendly categories
+function classifyError(error: string): { title: string; label: string; color: string } | null {
+  const lower = error.toLowerCase()
+  if (lower.includes('401') || lower.includes('invalid api key') || lower.includes('unauthorized')) {
+    return { title: 'Invalid API Key', label: 'HTTP 401 — Unauthorized', color: 'bg-red-500/10 text-red-600' }
+  }
+  if (lower.includes('403') || lower.includes('expired') || lower.includes('forbidden')) {
+    return { title: 'API Key Expired', label: 'HTTP 403 — Forbidden', color: 'bg-red-500/10 text-red-600' }
+  }
+  if (lower.includes('429') || lower.includes('rate limit')) {
+    return { title: 'Rate Limited', label: 'HTTP 429 — Too Many Requests', color: 'bg-amber-500/10 text-amber-600' }
+  }
+  if (lower.includes('404') || lower.includes('not found') || lower.includes('endpoint')) {
+    return { title: 'Invalid Endpoint', label: 'HTTP 404 — Not Found', color: 'bg-red-500/10 text-red-600' }
+  }
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return { title: 'Request Timeout', label: 'Provider did not respond', color: 'bg-amber-500/10 text-amber-600' }
+  }
+  if (lower.includes('network') || lower.includes('connect') || lower.includes('dns')) {
+    return { title: 'Network Error', label: 'Could not reach provider', color: 'bg-red-500/10 text-red-600' }
+  }
+  if (lower.includes('no api key') || lower.includes('no base url')) {
+    return { title: 'Configuration Missing', label: 'No API key or URL set', color: 'bg-amber-500/10 text-amber-600' }
+  }
+  return { title: 'Connection Failed', label: 'Unknown error', color: 'bg-red-500/10 text-red-600' }
 }
 
 /* ----------------------------------------------------------------------------

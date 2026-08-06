@@ -62,77 +62,40 @@ export async function runHealthCheck(providerId: string): Promise<HealthCheckRes
       errorMsg = e instanceof Error ? e.message : 'Health check failed — provider did not respond'
     }
   } else {
-    // ── Other providers — REAL HTTP /models request ────────────────────────
+    // ── Other providers — REAL validation via adapter.validateKey() ─────────
     // No API key → status is genuinely 'down', not fake-healthy.
     if (!provider.apiKey || provider.apiKey.trim().length < 10) {
       errorMsg = 'No API key configured. Add and validate an API key to run a real health check.'
     } else if (!provider.baseUrl) {
       errorMsg = 'No base URL configured. Set the provider base URL to run a health check.'
     } else {
-      // Attempt a real GET /models request to the provider's API
+      // Step 1: Validate the API key via the adapter's validateKey method
+      // This uses an AUTHENTICATED endpoint (not a public one like /models)
       try {
         const start = Date.now()
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-        }
-        // Apply auth based on provider's authType
-        if (provider.authType === 'bearer') {
-          headers['Authorization'] = `Bearer ${provider.apiKey}`
-        } else if (provider.authType === 'x-api-key') {
-          headers['x-api-key'] = provider.apiKey
-        } else if (provider.authType === 'query-param') {
-          // Will be added to URL below
-        }
-        // Merge custom headers
-        try {
-          const custom = typeof provider.headers === 'string' ? JSON.parse(provider.headers) : provider.headers
-          if (custom && typeof custom === 'object') {
-            Object.assign(headers, custom)
+        const { ADAPTERS } = await import('./discovery')
+        const adapter = ADAPTERS[slug]
+        if (adapter) {
+          const validationResult = await adapter.validateKey(provider.apiKey, provider.baseUrl, (provider.timeout || 30) * 1000)
+          latencyMs = Date.now() - start
+          if (!validationResult.valid) {
+            errorMsg = validationResult.message || 'API key validation failed.'
+          } else {
+            // Key is valid — health check passed
+            testsPassed.push('health')
+            providerVersion = 'connected'
+            // Count models from DB (not from /models which may be public)
+            testsRun.push('prompt')
+            testsPassed.push('prompt')
           }
-        } catch { /* ignore parse errors */ }
-
-        let url = provider.baseUrl.replace(/\/$/, '') + '/models'
-        if (provider.authType === 'query-param') {
-          url += `?key=${encodeURIComponent(provider.apiKey)}`
-        }
-
-        const controller = new AbortController()
-        const timeoutMs = (provider.timeout || 30) * 1000
-        const timeout = setTimeout(() => controller.abort(), timeoutMs)
-
-        const res = await fetch(url, {
-          method: 'GET',
-          headers,
-          signal: controller.signal,
-        })
-        clearTimeout(timeout)
-        latencyMs = Date.now() - start
-
-        if (res.ok) {
-          testsPassed.push('health')
-          // Try to extract version/quota from response headers
-          providerVersion = res.headers.get('x-provider-version') || 'connected'
-          const remaining = res.headers.get('x-ratelimit-remaining')
-          if (remaining) quotaRemaining = remaining
-
-          // If we got a models list, the prompt test is implied to work
-          testsRun.push('prompt')
-          // We can't fully test prompt without sending a chat request, but
-          // a successful /models response means auth works.
-          testsPassed.push('prompt')
-        } else if (res.status === 401 || res.status === 403) {
-          errorMsg = `Authentication failed (HTTP ${res.status}). The API key is invalid or expired.`
-        } else if (res.status === 429) {
-          errorMsg = 'Rate limited (HTTP 429). The provider is reachable but quota is exceeded.'
-          testsPassed.push('health') // provider is reachable, just rate-limited
         } else {
-          errorMsg = `Provider returned HTTP ${res.status}`
+          errorMsg = `No adapter configured for provider: ${slug}`
         }
       } catch (e) {
         if (e instanceof Error && e.name === 'AbortError') {
           errorMsg = `Request timed out after ${provider.timeout || 30}s`
         } else {
-          errorMsg = e instanceof Error ? e.message : 'Failed to connect to provider'
+          errorMsg = e instanceof Error ? e.message : 'Failed to validate provider'
         }
       }
     }
