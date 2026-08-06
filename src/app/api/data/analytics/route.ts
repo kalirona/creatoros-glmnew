@@ -10,16 +10,23 @@ export async function GET() {
   const revenue = orders.filter((o) => o.status === 'COMPLETED').reduce((s, o) => s + o.amount, 0)
   const mrr = plans.filter((p) => p.interval === 'MONTHLY').reduce((s, p) => s + p.price * p.members, 0) +
     plans.filter((p) => p.interval === 'YEARLY').reduce((s, p) => s + (p.price * p.members) / 12, 0)
-  // 12-month revenue trend (synthesized from orders spread)
+  // 12-month revenue trend — use REAL order data grouped by month
   const months: { month: string; revenue: number; students: number }[] = []
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const now = new Date()
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const nextD = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
+    // Real revenue from orders in this month
+    const monthOrders = orders.filter((o) => {
+      const od = new Date(o.createdAt)
+      return o.status === 'COMPLETED' && od >= d && od < nextD
+    })
+    const monthRevenue = monthOrders.reduce((s, o) => s + o.amount, 0)
     months.push({
       month: monthNames[d.getMonth()],
-      revenue: Math.round(revenue / 12 * (0.6 + Math.random() * 0.8)),
-      students: Math.round(courses.reduce((s, c) => s + c.studentsCount, 0) / 12 * (0.5 + Math.random() * 0.9)),
+      revenue: monthRevenue,
+      students: Math.round(courses.reduce((s, c) => s + c.studentsCount, 0) / 12),
     })
   }
   // Traffic sources

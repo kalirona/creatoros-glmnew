@@ -11,7 +11,7 @@ import {
   KeySquare, ArrowRightLeft, ClipboardList, PlayCircle, XCircle, Eye as EyeIcon,
   // Provider Gateway UI icons
   Brain, Image as ImageIcon, Video as VideoIcon, Mic, Volume2, Puzzle,
-  Star, ChevronDown, ChevronUp, ExternalLink, Terminal, Send, Play,
+  Star, ExternalLink, Terminal, Send, Play,
   CheckCircle2, Sparkles, Cable, Settings, BookOpen, Stethoscope, ServerCog,
   Plug, PlugZap, RefreshCcw, Timer, Workflow, Building2, Wrench,
 } from 'lucide-react'
@@ -827,7 +827,7 @@ function CapIconBadges({ model }: { model: ProviderModel }) {
 export function ProvidersPanel() {
   const { data, loading, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [showKey, setShowKey] = useState<Record<string, boolean>>({})
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [modelsDialog, setModelsDialog] = useState<{ open: boolean; provider?: Provider }>({ open: false })
   const [testConn, setTestConn] = useState<{
     open: boolean; provider?: Provider; loading?: boolean; result?: TestConnectionResult
   }>({ open: false })
@@ -929,10 +929,6 @@ export function ProvidersPanel() {
     }
   }
 
-  const toggleExpand = (p: Provider) => {
-    setExpanded((s) => ({ ...s, [p.id]: !s[p.id] }))
-  }
-
   return (
     <div className="space-y-4">
       {/* Header — gateway title + Add Provider */}
@@ -990,7 +986,6 @@ export function ProvidersPanel() {
               <ProviderCard
                 provider={p}
                 showKey={!!showKey[p.id]}
-                expanded={!!expanded[p.id]}
                 validating={validatingId === p.id}
                 syncing={syncingId === p.id}
                 newKey={newKeys[p.id] || ''}
@@ -1003,7 +998,7 @@ export function ProvidersPanel() {
                 onTestPrompt={() => setTestPrompt({ open: true, provider: p })}
                 onUsage={() => setUsage({ open: true, provider: p })}
                 onEdit={() => setEditing(p)}
-                onToggleExpand={() => toggleExpand(p)}
+                onOpenModels={() => setModelsDialog({ open: true, provider: p })}
               />
             </motion.div>
           ))}
@@ -1031,6 +1026,14 @@ export function ProvidersPanel() {
         onClose={() => setUsage({ open: false })}
       />
 
+      <ModelsDialog
+        open={modelsDialog.open}
+        provider={modelsDialog.provider}
+        syncing={modelsDialog.provider ? syncingId === modelsDialog.provider.id : false}
+        onSyncModels={() => modelsDialog.provider && syncModels(modelsDialog.provider)}
+        onClose={() => setModelsDialog({ open: false })}
+      />
+
       <AddProviderDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -1054,13 +1057,12 @@ export function ProvidersPanel() {
  * -------------------------------------------------------------------------- */
 
 function ProviderCard({
-  provider, showKey, expanded, validating, syncing, newKey,
+  provider, showKey, validating, syncing, newKey,
   onToggleShowKey, onToggleActive, onValidateKey, onNewKeyChange,
-  onTestConnection, onSyncModels, onTestPrompt, onUsage, onEdit, onToggleExpand,
+  onTestConnection, onSyncModels, onTestPrompt, onUsage, onEdit, onOpenModels,
 }: {
   provider: Provider
   showKey: boolean
-  expanded: boolean
   validating: boolean
   syncing: boolean
   newKey: string
@@ -1073,7 +1075,7 @@ function ProviderCard({
   onTestPrompt: () => void
   onUsage: () => void
   onEdit: () => void
-  onToggleExpand: () => void
+  onOpenModels: () => void
 }) {
   const p = provider
   const caps = capList(p.capabilities)
@@ -1249,7 +1251,7 @@ function ProviderCard({
           </Button>
         </div>
 
-        {/* Edit + Expand Models row */}
+        {/* Edit + Models row */}
         <div className="flex gap-2 pt-1 border-t">
           <Button
             size="sm"
@@ -1263,23 +1265,11 @@ function ProviderCard({
             size="sm"
             variant="ghost"
             className="h-8 text-xs flex-1"
-            onClick={onToggleExpand}
+            onClick={onOpenModels}
           >
-            {expanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
-            Models ({p.modelsCount})
+            <Cpu className="h-3 w-3 mr-1" /> Models ({p.modelsCount})
           </Button>
         </div>
-
-        {/* Expandable models table */}
-        {expanded && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className="border-t pt-3"
-          >
-            <ModelsTable provider={p} onSyncModels={onSyncModels} syncing={syncing} lastSync={lastSync} />
-          </motion.div>
-        )}
       </CardContent>
     </Card>
   )
@@ -1474,7 +1464,7 @@ function TestPromptDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Terminal className="h-4 w-4 text-amber-500" /> Test Prompt
@@ -1589,7 +1579,7 @@ function UsageDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4 text-amber-500" /> Usage Stats
@@ -1812,7 +1802,7 @@ function AddProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-4 w-4 text-amber-500" /> Add Provider
@@ -2220,7 +2210,47 @@ function EditProviderDialog({
 }
 
 /* ----------------------------------------------------------------------------
- * ModelsTable — expandable per-provider models table
+ * ModelsDialog — wide modal containing the ModelsTable
+ * -------------------------------------------------------------------------- */
+
+function ModelsDialog({
+  open, provider, syncing, onSyncModels, onClose,
+}: {
+  open: boolean
+  provider?: Provider
+  syncing: boolean
+  onSyncModels: () => void
+  onClose: () => void
+}) {
+  if (!provider) return null
+  const lastSync = provider.lastSyncAt || provider.lastHealthCheck
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Cpu className="h-4 w-4 text-amber-500" /> Models
+            <span className="text-muted-foreground font-normal">· {provider.name}</span>
+            <Badge variant="secondary" className="text-[10px] ml-1">{provider.modelsCount} models</Badge>
+          </DialogTitle>
+          <DialogDescription>
+            Manage models for this provider. Click pricing to edit, toggle active/default, or sync to discover new models.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-2">
+          <ModelsTable provider={provider} onSyncModels={onSyncModels} syncing={syncing} lastSync={lastSync} />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ----------------------------------------------------------------------------
+ * ModelsTable — per-provider models table (used inside ModelsDialog)
  * -------------------------------------------------------------------------- */
 
 function ModelsTable({
@@ -3323,7 +3353,7 @@ export function JobsPanel() {
       )}
 
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-4 w-4 text-amber-500" /> Job Detail

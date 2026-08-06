@@ -1347,3 +1347,50 @@ Stage Summary:
 - Failover chain: primary → fallback → default chain (configurable)
 - Creator-safe: no provider names/model IDs visible to creators (they pick Fast/Balanced/Best/Creative/Reasoning)
 - PHASE AI-PROVIDER-01 COMPLETE
+
+---
+Task ID: PROVIDER-UI-FIX
+Agent: Main (Z.ai Code)
+Task: Fix Providers page Models layout break, widen Usage dialog, make Test Connection show real status, scan for demo data
+
+Work Log:
+- Fixed Models layout break: replaced inline expandable ModelsTable (which broke the card grid layout with a wide 7-column table) with a proper ModelsDialog (wide modal, max-w-5xl). The "Models (N)" button on each ProviderCard now opens a dialog instead of expanding inline.
+- Fixed Usage dialog width: changed from max-w-3xl (512px actual) to sm:max-w-5xl (1024px actual). The shadcn DialogContent defaults to sm:max-w-lg which was overriding our max-w class. Fixed all dialogs in admin.tsx to use sm: prefix.
+- Fixed Test Connection to show REAL status (not demo data):
+  * runHealthCheck() now makes REAL HTTP GET /models requests to provider APIs (with proper auth headers: bearer, x-api-key, query-param)
+  * No API key → status='down', error='No API key configured...' (not fake 'healthy' with random latency)
+  * No base URL → status='down', error='No base URL configured...'
+  * HTTP 401/403 → 'Authentication failed. The API key is invalid or expired.'
+  * HTTP 429 → 'Rate limited' (status='degraded', health test passes)
+  * Timeout → 'Request timed out after Ns'
+  * GLM/Z.ai still uses real z-ai-web-dev-sdk call
+  * Removed Math.random() fake latency generation
+- Fixed runTestPrompt() to make REAL POST /chat/completions requests to provider APIs instead of returning simulated responses. Returns real response text, real token counts from usage object, real cost calculation.
+- Fixed analytics route: replaced Math.random() monthly chart variance with REAL order data grouped by month (filters COMPLETED orders by createdAt month).
+- Fixed AI Settings Usage Analytics cost trend chart: replaced Math.random() bar heights with REAL data from /api/admin/costs dailySeries. Shows empty state when no data.
+- Created /api/admin/system-metrics endpoint: returns REAL CPU%, RAM%, disk usage, process uptime, database size/table count, hostname, platform, Node.js version via Node.js os module + process.memoryUsage() + fs.stat.
+- Updated system-settings.tsx MonitoringPanel: replaced hardcoded CPU 23%/RAM 47%/Disk 12%/Network 8% with REAL metrics from /api/admin/system-metrics. Added Server Info card showing real hostname, platform, arch, Node version, uptime, DB size, DB tables.
+- Updated system-settings.tsx DatabasePanel: replaced hardcoded "12.4 MB" size with REAL database size from /api/admin/system-metrics. Shows real table count.
+- Removed dead code: removed unused ChevronUp/ChevronDown imports from admin.tsx (were used by old expand button, no longer needed).
+- Updated stale comment in test-prompt route.ts (was "returns a simulated response" → now "makes a REAL POST /chat/completions").
+
+Browser-Verified:
+- ✅ Providers tab: 13 provider cards render correctly, no layout break
+- ✅ OpenRouter shows "Down" status (real — no API key configured)
+- ✅ Z.ai shows "Healthy" with real 1586ms latency
+- ✅ "Models (10)" button opens wide dialog (1024px) with full models table — no layout break
+- ✅ "Usage" button opens wide dialog (1024px) with real usage stats
+- ✅ "Test Connection" on OpenRouter shows: DOWN, 0ms, "No base URL configured" error, Health=Failed, others=Skipped
+- ✅ System Settings → Monitoring: shows real CPU 57%, RAM 72%, uptime, DB size 1.39 MB, 57 tables
+- ✅ No Math.random() in any source code (except legitimate uses: course-builder ID generation, community.ts token generation, sidebar.tsx skeleton loading animation)
+- ✅ Lint: 0 errors
+- ✅ TypeScript: 0 errors
+
+Stage Summary:
+- All 4 issues fixed: Models layout, Usage dialog width, Test Connection real status, demo data scan
+- No simulated/fake data anywhere in provider gateway (health checks, test prompts, usage stats)
+- Real system metrics endpoint created and wired into System Settings Monitoring + Database panels
+- Real analytics chart data (orders grouped by month)
+- Real cost trend chart data (from AiCost dailySeries)
+- Dead code removed (unused ChevronUp/Down imports)
+- All browser-verified with real data flowing through

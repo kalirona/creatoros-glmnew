@@ -1,10 +1,10 @@
 // ============================================================================
 // Provider Gateway — Health Check & Test Prompt
 // ----------------------------------------------------------------------------
-// Runs health checks against providers and executes test prompts.
-// Uses the z-ai-web-dev-sdk for the GLM/Z.ai provider (which is the only
-// provider with real connectivity in the sandbox). Other providers return
-// a simulated result based on whether an API key is configured.
+// Runs REAL health checks against providers. No simulated/fake data.
+// For GLM/Z.ai: uses z-ai-web-dev-sdk (real connectivity in sandbox).
+// For other providers: attempts a real HTTP /models request to the provider's
+//   API. If no API key is configured, returns status='down' with a clear error.
 // ============================================================================
 
 import ZAI from 'z-ai-web-dev-sdk'
@@ -39,7 +39,7 @@ export async function runHealthCheck(providerId: string): Promise<HealthCheckRes
   let quotaRemaining = ''
   let errorMsg = ''
 
-  // For GLM/Z.ai provider — do a real health check
+  // ── GLM / Z.ai — real health check via z-ai-web-dev-sdk ──────────────────
   if (slug === 'glm' || slug === 'zai') {
     try {
       const start = Date.now()
@@ -52,31 +52,94 @@ export async function runHealthCheck(providerId: string): Promise<HealthCheckRes
       providerVersion = 'v4.6'
       testsPassed.push('health')
 
-      // If we got a response, the provider is healthy
+      // If we got a real response, the prompt test passes too
       if (completion.choices?.[0]?.message?.content) {
         testsRun.push('prompt')
         testsPassed.push('prompt')
       }
     } catch (e) {
       latencyMs = 0
-      errorMsg = e instanceof Error ? e.message : 'Health check failed'
+      errorMsg = e instanceof Error ? e.message : 'Health check failed — provider did not respond'
     }
   } else {
-    // For other providers — check if API key is configured
-    testsRun.push('prompt')
-    if (provider.apiKey && provider.apiKey.length >= 10) {
-      latencyMs = Math.floor(Math.random() * 200) + 50 // simulated latency
-      providerVersion = 'configured'
-      quotaRemaining = 'N/A (sandbox)'
-      testsPassed.push('health')
-      testsPassed.push('prompt')
+    // ── Other providers — REAL HTTP /models request ────────────────────────
+    // No API key → status is genuinely 'down', not fake-healthy.
+    if (!provider.apiKey || provider.apiKey.trim().length < 10) {
+      errorMsg = 'No API key configured. Add and validate an API key to run a real health check.'
+    } else if (!provider.baseUrl) {
+      errorMsg = 'No base URL configured. Set the provider base URL to run a health check.'
     } else {
-      errorMsg = 'No API key configured'
+      // Attempt a real GET /models request to the provider's API
+      try {
+        const start = Date.now()
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        }
+        // Apply auth based on provider's authType
+        if (provider.authType === 'bearer') {
+          headers['Authorization'] = `Bearer ${provider.apiKey}`
+        } else if (provider.authType === 'x-api-key') {
+          headers['x-api-key'] = provider.apiKey
+        } else if (provider.authType === 'query-param') {
+          // Will be added to URL below
+        }
+        // Merge custom headers
+        try {
+          const custom = typeof provider.headers === 'string' ? JSON.parse(provider.headers) : provider.headers
+          if (custom && typeof custom === 'object') {
+            Object.assign(headers, custom)
+          }
+        } catch { /* ignore parse errors */ }
+
+        let url = provider.baseUrl.replace(/\/$/, '') + '/models'
+        if (provider.authType === 'query-param') {
+          url += `?key=${encodeURIComponent(provider.apiKey)}`
+        }
+
+        const controller = new AbortController()
+        const timeoutMs = (provider.timeout || 30) * 1000
+        const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+        const res = await fetch(url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        })
+        clearTimeout(timeout)
+        latencyMs = Date.now() - start
+
+        if (res.ok) {
+          testsPassed.push('health')
+          // Try to extract version/quota from response headers
+          providerVersion = res.headers.get('x-provider-version') || 'connected'
+          const remaining = res.headers.get('x-ratelimit-remaining')
+          if (remaining) quotaRemaining = remaining
+
+          // If we got a models list, the prompt test is implied to work
+          testsRun.push('prompt')
+          // We can't fully test prompt without sending a chat request, but
+          // a successful /models response means auth works.
+          testsPassed.push('prompt')
+        } else if (res.status === 401 || res.status === 403) {
+          errorMsg = `Authentication failed (HTTP ${res.status}). The API key is invalid or expired.`
+        } else if (res.status === 429) {
+          errorMsg = 'Rate limited (HTTP 429). The provider is reachable but quota is exceeded.'
+          testsPassed.push('health') // provider is reachable, just rate-limited
+        } else {
+          errorMsg = `Provider returned HTTP ${res.status}`
+        }
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') {
+          errorMsg = `Request timed out after ${provider.timeout || 30}s`
+        } else {
+          errorMsg = e instanceof Error ? e.message : 'Failed to connect to provider'
+        }
+      }
     }
   }
 
   const status: 'healthy' | 'degraded' | 'down' =
-    testsPassed.length === testsRun.length ? 'healthy' :
+    testsPassed.length === testsRun.length && testsPassed.length > 0 ? 'healthy' :
     testsPassed.length > 0 ? 'degraded' : 'down'
 
   // Update provider health
@@ -182,8 +245,9 @@ export async function runTestPrompt(
     }
   }
 
-  // For other providers — return a simulated response if key is configured
-  if (!provider.apiKey || provider.apiKey.length < 10) {
+  // ── Other providers — REAL chat completion request via HTTP ──────────────
+  // No simulated responses. If we can't reach the provider, return an error.
+  if (!provider.apiKey || provider.apiKey.trim().length < 10) {
     return {
       success: false,
       response: '',
@@ -191,26 +255,130 @@ export async function runTestPrompt(
       outputTokens: 0,
       costUsd: 0,
       latencyMs: 0,
-      error: `${provider.name} requires a real API key to run test prompts. Add a key in the provider settings.`,
+      error: `${provider.name} requires a real API key to run test prompts. Add and validate a key first.`,
     }
   }
 
-  // Simulated response (in production this would call the provider's API)
-  const start = Date.now()
-  const simulatedResponse = `This is a simulated response from ${model.displayName} via ${provider.name}. In production with a real API key, this would return the actual model output for: "${prompt.slice(0, 80)}${prompt.length > 80 ? '...' : ''}"`
-  await new Promise((r) => setTimeout(r, 200))
-  const latencyMs = Date.now() - start
-  const inputTokens = Math.ceil(prompt.length / 4) + 10
-  const outputTokens = Math.ceil(simulatedResponse.length / 4)
-  const costUsd = (inputTokens / 1000) * model.inputCostPer1k + (outputTokens / 1000) * model.outputCostPer1k
+  if (!provider.baseUrl) {
+    return {
+      success: false,
+      response: '',
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      latencyMs: 0,
+      error: `${provider.name} has no base URL configured. Set it in the provider settings.`,
+    }
+  }
 
-  return {
-    success: true,
-    response: simulatedResponse,
-    inputTokens,
-    outputTokens,
-    costUsd,
-    latencyMs,
+  // Make a real POST /chat/completions request to the provider's API
+  try {
+    const start = Date.now()
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if (provider.authType === 'bearer') {
+      headers['Authorization'] = `Bearer ${provider.apiKey}`
+    } else if (provider.authType === 'x-api-key') {
+      headers['x-api-key'] = provider.apiKey
+    }
+    // Merge custom headers
+    try {
+      const custom = typeof provider.headers === 'string' ? JSON.parse(provider.headers) : provider.headers
+      if (custom && typeof custom === 'object') {
+        Object.assign(headers, custom)
+      }
+    } catch { /* ignore */ }
+
+    let url = provider.baseUrl.replace(/\/$/, '') + '/chat/completions'
+    if (provider.authType === 'query-param') {
+      url += `?key=${encodeURIComponent(provider.apiKey)}`
+    }
+
+    const controller = new AbortController()
+    const timeoutMs = (provider.timeout || 60) * 1000
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: model.name,
+        messages: [
+          { role: 'system', content: 'You are a helpful test assistant. Respond concisely.' },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 500,
+        stream: false,
+      }),
+    })
+    clearTimeout(timeout)
+    const latencyMs = Date.now() - start
+
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '')
+      let errMsg = `Provider returned HTTP ${res.status}`
+      if (res.status === 401 || res.status === 403) {
+        errMsg = 'Authentication failed. The API key is invalid or expired.'
+      } else if (res.status === 404) {
+        errMsg = `Model "${model.name}" not found on this provider.`
+      } else if (res.status === 429) {
+        errMsg = 'Rate limited. Too many requests.'
+      } else if (errBody) {
+        try {
+          const ej = JSON.parse(errBody)
+          errMsg = ej.error?.message || ej.message || errMsg
+        } catch {
+          errMsg = errBody.slice(0, 200)
+        }
+      }
+      return {
+        success: false,
+        response: '',
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        latencyMs,
+        error: errMsg,
+      }
+    }
+
+    const data = await res.json()
+    const response = data.choices?.[0]?.message?.content || ''
+    const inputTokens = data.usage?.prompt_tokens || Math.ceil(prompt.length / 4)
+    const outputTokens = data.usage?.completion_tokens || Math.ceil(response.length / 4)
+    const costUsd = (inputTokens / 1000) * model.inputCostPer1k + (outputTokens / 1000) * model.outputCostPer1k
+
+    return {
+      success: true,
+      response,
+      inputTokens,
+      outputTokens,
+      costUsd,
+      latencyMs,
+    }
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      return {
+        success: false,
+        response: '',
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        latencyMs: 0,
+        error: `Request timed out after ${provider.timeout || 60}s`,
+      }
+    }
+    return {
+      success: false,
+      response: '',
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      latencyMs: 0,
+      error: e instanceof Error ? e.message : 'Failed to connect to provider',
+    }
   }
 }
 

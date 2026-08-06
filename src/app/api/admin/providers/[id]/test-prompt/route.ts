@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 // Body: { modelId?: string, prompt: string }
 // Calls runTestPrompt(providerId, modelId, prompt) which:
 //   - For GLM/Z.ai: makes a real chat completion call via z-ai-web-dev-sdk
-//   - For other providers: returns a simulated response if a key is configured
+//   - For other providers: makes a REAL POST /chat/completions to the provider's API
 // Returns: { success, response, inputTokens, outputTokens, costUsd,
 //            latencyMs, error? }
 export async function POST(

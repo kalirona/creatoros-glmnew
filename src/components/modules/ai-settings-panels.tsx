@@ -269,11 +269,18 @@ export function UsageAnalyticsPanel() {
     perProviderHealth: { id: string; name: string; slug: string; isHealthy: boolean; todayCost: number; todayRequests: number; todayFailures: number }[]
   }>('/api/admin/monitoring')
 
+  const { data: costsData } = useApi<{
+    dailySeries: { day: string; totalCostUsd: number; requests: number; failures: number }[]
+  }>('/api/admin/costs')
+
   if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
 
   const topProviders = [...data.perProviderHealth]
     .sort((a, b) => b.todayRequests - a.todayRequests)
     .slice(0, 5)
+
+  const dailySeries = costsData?.dailySeries || []
+  const maxCost = Math.max(...dailySeries.map((d) => d.totalCostUsd), 0.001)
 
   return (
     <div className="space-y-4">
@@ -332,19 +339,32 @@ export function UsageAnalyticsPanel() {
         </CardContent>
       </Card>
 
-      {/* Cost trend (placeholder) */}
+      {/* Cost trend — real data from /api/admin/costs */}
       <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-amber-500" />Cost Trend (30 days)</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-amber-500" />Cost Trend ({dailySeries.length} days)</CardTitle></CardHeader>
         <CardContent>
-          <div className="flex items-end gap-1 h-32">
-            {Array.from({ length: 30 }).map((_, i) => {
-              const height = Math.max(2, Math.sin(i / 3) * 40 + Math.random() * 30 + 10)
-              return (
-                <div key={i} className="flex-1 bg-amber-500/20 rounded-t hover:bg-amber-500/40 transition-colors" style={{ height: `${height}%` }} title={`Day ${i + 1}`} />
-              )
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground mt-2 text-center">Last 30 days · hover bars for details</p>
+          {dailySeries.length === 0 ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              No cost data yet. Generate AI content to see usage trends.
+            </div>
+          ) : (
+            <>
+              <div className="flex items-end gap-1 h-32">
+                {dailySeries.map((d, i) => {
+                  const height = Math.max(2, (d.totalCostUsd / maxCost) * 100)
+                  return (
+                    <div
+                      key={i}
+                      className="flex-1 bg-amber-500/20 rounded-t hover:bg-amber-500/40 transition-colors"
+                      style={{ height: `${height}%` }}
+                      title={`${d.day}: $${d.totalCostUsd.toFixed(4)} (${d.requests} requests, ${d.failures} failures)`}
+                    />
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 text-center">Last {dailySeries.length} days · hover bars for details</p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
