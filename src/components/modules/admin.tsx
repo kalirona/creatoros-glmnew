@@ -1,9 +1,14 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import {
-  ShieldCheck, Zap, Cpu, ToggleLeft, Settings2, History, Users, DollarSign,
-  Database, Sliders, Save, Loader2, Eye, EyeOff, Check, AlertCircle, Server, Layers, Activity,
+  ShieldCheck, Server, Cpu, KeyRound, Database, Activity, DollarSign,
+  LineChart, Lock, ToggleLeft, Layers, Zap, History, Settings2, Sliders,
+  Loader2, Eye, EyeOff, Check, AlertCircle, AlertTriangle, RefreshCw, Save,
+  Plus, Filter, Search, ChevronLeft, ChevronRight, Globe, Boxes, Gauge,
+  Rocket, FileText, ListChecks, HardDrive, Clock, TrendingUp, TrendingDown,
+  CircleDot, Wifi, WifiOff, UserCheck, Coins, BarChart3, ShieldAlert,
+  KeySquare, ArrowRightLeft, ClipboardList, PlayCircle, XCircle, Eye as EyeIcon,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,24 +17,423 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { useApi, formatNumber } from '@/hooks/use-api'
+import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 import { cn } from '@/lib/utils'
 
-interface Tool {
-  id: string; slug: string; name: string; description: string; icon: string; category: string;
-  systemPrompt: string; creditCost: number; temperature: number; maxTokens: number;
-  outputType: string; isVisible: boolean; isPro: boolean;
+/* ============================================================================
+ * Types — API response contracts (mirror Task 3a backend shapes)
+ * ========================================================================== */
+
+interface ProviderModel {
+  id: string
+  name: string
+  displayName: string
+  modality: string
+  isDefault: boolean
+  costMultiplier: number
+  inputCostPer1k: number
+  outputCostPer1k: number
+  isActive: boolean
 }
-interface ToolStats { total: number; visible: number; pro: number; generations: number; totalCreditsUsed: number }
+
+interface Provider {
+  id: string
+  name: string
+  slug: string
+  capabilities: string
+  isActive: boolean
+  isHealthy: boolean
+  priority: number
+  dailyBudget: number
+  monthlyBudget: number
+  dailyRequests: number
+  monthlyRequests: number
+  lastHealthCheck: string | null
+  description: string | null
+  docsUrl: string | null
+  maskedApiKey: string
+  modelsCount: number
+  keysCount: number
+  activeKeysCount: number
+  todayCost: number
+  todayRequests: number
+  todayFailures: number
+  models: ProviderModel[]
+}
+
+interface ProviderKey {
+  id: string
+  providerId: string
+  label: string
+  maskedValue: string
+  isActive: boolean
+  lastUsedAt: string | null
+  lastRotatedAt: string | null
+  rotatedFrom: string | null
+  createdAt: string
+}
+
+interface ModelRow {
+  id: string
+  name: string
+  displayName: string
+  modality: string
+  isDefault: boolean
+  costMultiplier: number
+  inputCostPer1k: number
+  outputCostPer1k: number
+  isActive: boolean
+  provider: { id: string; name: string; slug: string; isActive: boolean }
+}
+
+interface RouteRow {
+  id: string
+  toolCategory: string
+  providerId: string | null
+  fallbackProviderId: string | null
+  modelId: string | null
+  strategy: string
+  weight: number
+  isActive: boolean
+  provider: { id: string; name: string; slug: string; isActive: boolean } | null
+  fallbackProvider: { id: string; name: string; slug: string; isActive: boolean } | null
+  model: { id: string; name: string; displayName: string; modality: string } | null
+}
+
+interface JobRow {
+  id: string
+  type: string
+  prompt: string
+  params: string
+  status: string
+  progress: number
+  externalId: string | null
+  resultUrl: string
+  errorMessage: string
+  creditsUsed: number
+  costUsd: number
+  createdAt: string
+  startedAt: string | null
+  completedAt: string | null
+  provider: { id: string; name: string; slug: string } | null
+  user: { id: string; name: string | null; avatarUrl: string | null; email: string | null } | null
+}
+
+interface JobStats {
+  queued: number
+  rendering: number
+  processing: number
+  completed: number
+  failed: number
+  cancelled: number
+  totalToday: number
+}
+
+interface LogRow {
+  id: string
+  requestType: string
+  toolSlug: string
+  routeCategory: string
+  status: string
+  errorCode: string
+  errorMessage: string
+  durationMs: number
+  inputTokens: number
+  outputTokens: number
+  creditsUsed: number
+  costUsd: number
+  createdAt: string
+  provider: { id: string; name: string; slug: string } | null
+  user: { id: string; name: string | null; avatarUrl: string | null; email: string | null } | null
+}
+
+interface MonitoringData {
+  timestamp: string
+  providers: { active: number; total: number }
+  today: { requests: number; successRate: number; costUsd: number; avgLatencyMs: number }
+  perProviderHealth: Array<{
+    id: string; name: string; slug: string; isHealthy: boolean
+    lastHealthCheck: string | null
+    todayCost: number; todayRequests: number; todayFailures: number
+  }>
+  topFailingTools: Array<{ toolSlug: string; count: number }>
+  rateLimitedLastHour: number
+  storage: { totalBytes: number; workspaceCount: number }
+}
+
+interface CostData {
+  today: { totalCostUsd: number; requests: number; failures: number }
+  thisMonth: { totalCostUsd: number; requests: number; failures: number }
+  dailySeries: Array<{ day: string; totalCostUsd: number; requests: number; failures: number }>
+  perProviderBreakdown: Array<{
+    providerId: string; name: string; slug: string
+    todayCost: number; todayRequests: number; todayFailures: number
+    dailyBudget: number; budgetExceeded: boolean
+  }>
+  budgetAlerts: Array<{
+    providerId: string; name: string; slug: string
+    level: 'warning' | 'critical'
+    todayCost: number; dailyBudget: number; message: string
+  }>
+}
+
+interface StorageWorkspace {
+  workspaceId: string
+  imagesBytes: number
+  videosBytes: number
+  audioBytes: number
+  documentsBytes: number
+  totalBytes: number
+  quotaBytes: number
+  assetCount: number
+  usagePercent: number
+  updatedAt: string
+}
+
+interface StorageData {
+  workspaces: StorageWorkspace[]
+  totals: {
+    images: number; videos: number; audio: number
+    documents: number; total: number; quota: number
+    assets: number; usagePercent: number; workspaceCount: number
+  }
+}
+
+interface CreditsData {
+  summary: {
+    totalIssued: number; issuedCount: number
+    totalSpent: number; spentCount: number
+    inCirculation: number; totalUsers: number; avgCreditsPerUser: number
+  }
+  recent: Array<{
+    id: string; amount: number; reason: string; createdAt: string
+    user: { id: string; name: string | null; email: string | null; avatarUrl: string | null }
+  }>
+}
+
+interface SecurityData {
+  apiKeys: { total: number; active: number; inactive: number; rotatedInLast30Days: number }
+  rateLimit: { defaultMaxPerMinute: number; defaultMaxPerHour: number }
+  auditRetention: {
+    auditLogRetentionDays: number
+    requireApiKeyRotationDays: number
+    oldestLogAt: string | null
+  }
+  providersWithEmptyKey: Array<{
+    id: string; name: string; slug: string
+    capabilities: string; isActive: boolean
+  }>
+  failedAuthAttempts24h: number
+  workspaceIsolation: {
+    totalGenerations: number
+    defaultWorkspaceGenerations: number
+    isolatedCount: number
+    isolationPercent: number
+  }
+}
+
+interface Flag {
+  id: string; key: string; name: string; description: string; enabled: boolean
+}
+
+/* ============================================================================
+ * Constants
+ * ========================================================================== */
+
+const ROUTE_CATEGORIES: Array<{ name: string; desc: string }> = [
+  { name: 'WRITING', desc: 'Long-form article & narrative generation' },
+  { name: 'MARKETING', desc: 'Ad copy, landing pages, marketing assets' },
+  { name: 'COURSE', desc: 'Course outline, lesson, and curriculum authoring' },
+  { name: 'WEBSITE', desc: 'Web page copy and structure generation' },
+  { name: 'SEO', desc: 'SEO meta, keywords, and content optimization' },
+  { name: 'EMAIL', desc: 'Email sequence and broadcast writing' },
+  { name: 'BLOG', desc: 'Blog post generation' },
+  { name: 'CRM', desc: 'Customer replies and CRM automation' },
+  { name: 'AUTOMATION', desc: 'Workflow automation prompts' },
+  { name: 'IMAGE', desc: 'Image generation requests' },
+  { name: 'VIDEO', desc: 'Video generation requests' },
+  { name: 'VOICE', desc: 'Text-to-speech synthesis' },
+  { name: 'STT', desc: 'Speech-to-text transcription' },
+  { name: 'EMBEDDING', desc: 'Vector embedding generation' },
+]
+
+const STRATEGIES = ['smart', 'cost', 'quality', 'round_robin'] as const
+const STATUSES = ['QUEUED', 'RENDERING', 'PROCESSING', 'COMPLETED', 'FAILED', 'CANCELLED'] as const
+const LOG_STATUSES = ['OK', 'ERROR', 'TIMEOUT', 'RATE_LIMITED', 'QUOTA_EXCEEDED'] as const
+const MODALITIES = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT', 'TTS'] as const
+const REQUEST_TYPES = ['CHAT', 'GENERATE', 'IMAGE', 'VIDEO', 'EMBEDDING', 'STT', 'TTS'] as const
+
+/* ============================================================================
+ * Shared UI helpers
+ * ========================================================================== */
+
+function StatCard({
+  icon: Icon, label, value, hint, accent = 'amber',
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string | number
+  hint?: string
+  accent?: 'amber' | 'emerald' | 'red' | 'sky' | 'violet'
+}) {
+  const colorMap = {
+    amber: 'bg-amber-500/10 text-amber-600',
+    emerald: 'bg-emerald-500/10 text-emerald-600',
+    red: 'bg-red-500/10 text-red-600',
+    sky: 'bg-sky-500/10 text-sky-600',
+    violet: 'bg-violet-500/10 text-violet-600',
+  }
+  return (
+    <Card>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg shrink-0', colorMap[accent])}>
+          <Icon className="h-4 w-4" />
+        </div>
+        <div className="min-w-0">
+          <p className="text-lg font-bold tabular-nums leading-none truncate">{value}</p>
+          <p className="text-[11px] text-muted-foreground mt-1">{label}</p>
+          {hint && <p className="text-[10px] text-muted-foreground/70 mt-0.5">{hint}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function HealthDot({ healthy, label }: { healthy: boolean; label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn('h-2 w-2 rounded-full', healthy ? 'bg-emerald-500' : 'bg-red-500')}>
+        <span className={cn('block h-2 w-2 rounded-full', healthy ? 'animate-pulse bg-emerald-500/40' : 'bg-red-500/40')} />
+      </span>
+      <span className={cn('text-xs', healthy ? 'text-emerald-600' : 'text-red-600')}>
+        {label || (healthy ? 'Healthy' : 'Unhealthy')}
+      </span>
+    </span>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    OK: 'bg-emerald-500/10 text-emerald-600',
+    COMPLETED: 'bg-emerald-500/10 text-emerald-600',
+    QUEUED: 'bg-sky-500/10 text-sky-600',
+    RENDERING: 'bg-amber-500/10 text-amber-600',
+    PROCESSING: 'bg-amber-500/10 text-amber-600',
+    ERROR: 'bg-red-500/10 text-red-600',
+    FAILED: 'bg-red-500/10 text-red-600',
+    CANCELLED: 'bg-muted text-muted-foreground',
+    TIMEOUT: 'bg-red-500/10 text-red-600',
+    RATE_LIMITED: 'bg-amber-500/10 text-amber-600',
+    QUOTA_EXCEEDED: 'bg-red-500/10 text-red-600',
+  }
+  return (
+    <Badge variant="secondary" className={cn('text-[10px] font-medium', map[status] || 'bg-muted')}>
+      {status}
+    </Badge>
+  )
+}
+
+function CapBadges({ capabilities }: { capabilities: string }) {
+  if (!capabilities) return null
+  const caps = capabilities.split(',').map((s) => s.trim()).filter(Boolean)
+  const capColor: Record<string, string> = {
+    TEXT: 'bg-amber-500/10 text-amber-600',
+    IMAGE: 'bg-violet-500/10 text-violet-600',
+    VIDEO: 'bg-violet-500/10 text-violet-600',
+    TTS: 'bg-sky-500/10 text-sky-600',
+    STT: 'bg-sky-500/10 text-sky-600',
+    EMBEDDING: 'bg-emerald-500/10 text-emerald-600',
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {caps.map((c) => (
+        <Badge key={c} variant="secondary" className={cn('text-[9px] font-medium px-1.5 py-0', capColor[c] || 'bg-muted')}>
+          {c}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function ProgressBar({ value, accent = 'amber' }: { value: number; accent?: 'amber' | 'emerald' | 'red' | 'sky' }) {
+  const v = Math.min(100, Math.max(0, value))
+  const colorMap = {
+    amber: 'bg-amber-500',
+    emerald: 'bg-emerald-500',
+    red: 'bg-red-500',
+    sky: 'bg-sky-500',
+  }
+  return (
+    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+      <div className={cn('h-full rounded-full transition-all', colorMap[accent])} style={{ width: `${v}%` }} />
+    </div>
+  )
+}
+
+function EmptyState({ icon: Icon, message }: { icon: React.ComponentType<{ className?: string }>; message: string }) {
+  return (
+    <div className="p-8 text-center">
+      <Icon className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  )
+}
+
+function LoadingBlock() {
+  return <Skeleton className="h-96 rounded-xl" />
+}
+
+async function mutate(
+  url: string, method: 'PUT' | 'POST' | 'PATCH' | 'DELETE',
+  body?: unknown, okMessage?: string,
+): Promise<{ ok: boolean; data?: unknown }> {
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error((d as { error?: string }).error || `Request failed (${res.status})`)
+    if (okMessage) toast.success(okMessage)
+    return { ok: true, data: d }
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Request failed')
+    return { ok: false }
+  }
+}
+
+function fmtBytes(n: number): string {
+  if (!n || n <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = n, i = 0
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`
+}
+
+function fmtMoney(n: number): string {
+  return '$' + (Math.round(n * 100) / 100).toFixed(n < 1 ? 4 : 2)
+}
+
+/* ============================================================================
+ * Main module — Super Admin shell
+ * ========================================================================== */
 
 export function AdminModule() {
+  const [tab, setTab] = useState('dashboard')
+
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header — amber themed */}
       <Card className="overflow-hidden border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-card to-card">
         <CardContent className="p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
@@ -39,358 +443,2205 @@ export function AdminModule() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold">Super Admin</h2>
-                <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 border-amber-500/20">Platform Control Center</Badge>
+                <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 border-amber-500/20">
+                  Platform Control Center
+                </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Manage AI providers, tools, routing, feature flags, billing, and global settings — no code required.</p>
+              <p className="text-xs text-muted-foreground">
+                Manage 12 AI providers, smart routing, models, jobs, costs, security & feature flags — no code required.
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> AI Engine Online
+            </span>
           </div>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="tools">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="tools"><Sliders className="h-3.5 w-3.5 mr-1.5" />Tool Builder</TabsTrigger>
-          <TabsTrigger value="providers"><Server className="h-3.5 w-3.5 mr-1.5" />AI Providers</TabsTrigger>
-          <TabsTrigger value="routing"><Cpu className="h-3.5 w-3.5 mr-1.5" />Model Routing</TabsTrigger>
+          <TabsTrigger value="dashboard"><Gauge className="h-3.5 w-3.5 mr-1.5" />Dashboard</TabsTrigger>
+          <TabsTrigger value="providers"><Server className="h-3.5 w-3.5 mr-1.5" />Providers</TabsTrigger>
+          <TabsTrigger value="keys"><KeyRound className="h-3.5 w-3.5 mr-1.5" />API Keys</TabsTrigger>
+          <TabsTrigger value="models"><Cpu className="h-3.5 w-3.5 mr-1.5" />Models</TabsTrigger>
+          <TabsTrigger value="routing"><ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />Routing</TabsTrigger>
+          <TabsTrigger value="credits"><Coins className="h-3.5 w-3.5 mr-1.5" />Credits</TabsTrigger>
+          <TabsTrigger value="storage"><HardDrive className="h-3.5 w-3.5 mr-1.5" />Storage</TabsTrigger>
+          <TabsTrigger value="jobs"><ClipboardList className="h-3.5 w-3.5 mr-1.5" />Jobs</TabsTrigger>
+          <TabsTrigger value="monitoring"><Activity className="h-3.5 w-3.5 mr-1.5" />Monitoring</TabsTrigger>
+          <TabsTrigger value="logs"><FileText className="h-3.5 w-3.5 mr-1.5" />Logs</TabsTrigger>
+          <TabsTrigger value="costs"><DollarSign className="h-3.5 w-3.5 mr-1.5" />Costs</TabsTrigger>
+          <TabsTrigger value="security"><Lock className="h-3.5 w-3.5 mr-1.5" />Security</TabsTrigger>
           <TabsTrigger value="flags"><ToggleLeft className="h-3.5 w-3.5 mr-1.5" />Feature Flags</TabsTrigger>
-          <TabsTrigger value="generations"><History className="h-3.5 w-3.5 mr-1.5" />Generations</TabsTrigger>
-          <TabsTrigger value="settings"><Settings2 className="h-3.5 w-3.5 mr-1.5" />Global Settings</TabsTrigger>
-          <TabsTrigger value="platform"><Activity className="h-3.5 w-3.5 mr-1.5" />Platform</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="tools"><ToolBuilder /></TabsContent>
+        <TabsContent value="dashboard"><DashboardPanel onJump={setTab} /></TabsContent>
         <TabsContent value="providers"><ProvidersPanel /></TabsContent>
+        <TabsContent value="keys"><ApiKeysPanel /></TabsContent>
+        <TabsContent value="models"><ModelsPanel /></TabsContent>
         <TabsContent value="routing"><RoutingPanel /></TabsContent>
+        <TabsContent value="credits"><CreditsPanel /></TabsContent>
+        <TabsContent value="storage"><StoragePanel /></TabsContent>
+        <TabsContent value="jobs"><JobsPanel /></TabsContent>
+        <TabsContent value="monitoring"><MonitoringPanel /></TabsContent>
+        <TabsContent value="logs"><LogsPanel /></TabsContent>
+        <TabsContent value="costs"><CostsPanel /></TabsContent>
+        <TabsContent value="security"><SecurityPanel /></TabsContent>
         <TabsContent value="flags"><FlagsPanel /></TabsContent>
-        <TabsContent value="generations"><GenerationsPanel /></TabsContent>
-        <TabsContent value="settings"><SettingsPanel /></TabsContent>
-        <TabsContent value="platform"><PlatformPanel /></TabsContent>
       </Tabs>
     </div>
   )
 }
 
-// ===== Tool Builder — edit prompts, costs, temp, visibility (no code) =====
-function ToolBuilder() {
-  const { data, loading, refetch } = useApi<{ tools: Tool[]; stats: ToolStats }>('/api/admin/tools')
-  const [editing, setEditing] = useState<Tool | null>(null)
-  const [saving, setSaving] = useState(false)
+/* ============================================================================
+ * 1. Dashboard — platform overview & system health
+ * ========================================================================== */
 
-  const save = async () => {
-    if (!editing) return
-    setSaving(true)
-    try {
-      const res = await fetch('/api/admin/tools', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) })
-      const d = await res.json()
-      if (!res.ok) throw new Error(d.error)
-      toast.success(`"${editing.name}" updated`)
-      setEditing(null); refetch()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
-    finally { setSaving(false) }
-  }
+function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
+  const { data: mon, loading: l1 } = useApi<MonitoringData>('/api/admin/monitoring')
+  const { data: logs, loading: l2 } = useApi<{ logs: LogRow[] }>('/api/admin/logs?page=1&pageSize=5')
 
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
+  if (l1 || !mon) return <LoadingBlock />
 
-  const stats = data.stats
-  const grouped = data.tools.reduce<Record<string, Tool[]>>((acc, t) => { (acc[t.category] ||= []).push(t); return acc }, {})
+  const quickLinks = [
+    { l: 'Providers', v: `${mon.providers.active}/${mon.providers.total} active`, i: Server, t: 'providers' },
+    { l: 'Routing', v: '14 categories', i: ArrowRightLeft, t: 'routing' },
+    { l: 'Monitoring', v: `${mon.today.successRate.toFixed(1)}% ok`, i: Activity, t: 'monitoring' },
+    { l: 'Costs', v: fmtMoney(mon.today.costUsd), i: DollarSign, t: 'costs' },
+  ]
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { l: 'Total Tools', v: stats.total, i: Sliders },
-          { l: 'Visible', v: stats.visible, i: Eye },
-          { l: 'Generations', v: formatNumber(stats.generations), i: Activity },
-          { l: 'Credits Used', v: formatNumber(stats.totalCreditsUsed), i: Zap },
-        ].map((s) => { const Icon = s.i; return (
-          <Card key={s.l}><CardContent className="p-4 flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"><Icon className="h-4 w-4" /></div>
-            <div><p className="text-lg font-bold tabular-nums leading-none">{s.v}</p><p className="text-[11px] text-muted-foreground mt-1">{s.l}</p></div>
-          </CardContent></Card>
-        )})}
+        <StatCard icon={Server} label="Active Providers" value={`${mon.providers.active}/${mon.providers.total}`} accent="emerald" />
+        <StatCard icon={Zap} label="Today Requests" value={formatNumber(mon.today.requests)} accent="amber" />
+        <StatCard icon={DollarSign} label="Today Cost" value={fmtMoney(mon.today.costUsd)} accent="amber" />
+        <StatCard icon={Check} label="Success Rate" value={`${mon.today.successRate.toFixed(1)}%`} accent={mon.today.successRate >= 95 ? 'emerald' : 'red'} />
       </div>
 
-      {editing ? (
+      <div className="grid lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle className="text-base flex items-center gap-2"><Sliders className="h-4 w-4 text-amber-500" /> Editing: {editing.name}</CardTitle>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button size="sm" onClick={save} disabled={saving}>{saving ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" />Saving</> : <><Save className="h-4 w-4 mr-1.5" />Save</>}</Button>
-            </div>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="h-4 w-4 text-amber-500" /> System Health
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div><Label>Tool Name</Label><Input className="mt-1.5" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></div>
-              <div><Label>Category</Label><Input className="mt-1.5" value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value })} /></div>
-            </div>
-            <div><Label>Description</Label><Input className="mt-1.5" value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} /></div>
-            <div><Label>System Prompt <span className="text-xs text-muted-foreground">(controls AI behavior)</span></Label><Textarea className="mt-1.5 font-mono text-xs" rows={8} value={editing.systemPrompt} onChange={(e) => setEditing({ ...editing, systemPrompt: e.target.value })} /></div>
-            <div className="grid sm:grid-cols-3 gap-4">
-              <div><Label>Credit Cost</Label><Input type="number" className="mt-1.5" value={editing.creditCost} onChange={(e) => setEditing({ ...editing, creditCost: Number(e.target.value) })} /></div>
-              <div><Label>Temperature</Label><Input type="number" step="0.1" min="0" max="2" className="mt-1.5" value={editing.temperature} onChange={(e) => setEditing({ ...editing, temperature: Number(e.target.value) })} /></div>
-              <div><Label>Max Tokens</Label><Input type="number" className="mt-1.5" value={editing.maxTokens} onChange={(e) => setEditing({ ...editing, maxTokens: Number(e.target.value) })} /></div>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div><Label>Output Type</Label>
-                <Select value={editing.outputType} onValueChange={(v) => setEditing({ ...editing, outputType: v })}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                  <SelectContent>{['MARKDOWN', 'COURSE', 'LESSON', 'EMAIL', 'SALES_PAGE', 'BLOG', 'SOCIAL', 'SCRIPT', 'PRODUCT', 'LANDING'].map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
-                </Select>
+          <CardContent className="space-y-2">
+            {[
+              { s: 'API Gateway', st: 'Operational', up: 99.98 },
+              { s: 'AI Engine (router + adapters)', st: 'Operational', up: 99.95 },
+              { s: 'Database (SQLite)', st: 'Operational', up: 100 },
+              { s: 'File Storage', st: 'Operational', up: 99.99 },
+              { s: 'Webhook Ingest', st: mon.storage.workspaceCount > 0 ? 'Operational' : 'Standby', up: 99.5 },
+            ].map((x) => (
+              <div key={x.s} className="flex items-center justify-between rounded-lg border p-2.5">
+                <div className="flex items-center gap-2">
+                  <span className={cn('h-2 w-2 rounded-full', x.st === 'Operational' ? 'bg-emerald-500' : 'bg-amber-500')} />
+                  <span className="text-sm">{x.s}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">{x.up}% uptime</span>
+                  <Badge variant="secondary" className={cn('text-[10px]', x.st === 'Operational' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>
+                    {x.st}
+                  </Badge>
+                </div>
               </div>
-              <div className="flex items-end gap-4 pb-1">
-                <div className="flex items-center gap-2"><Switch checked={editing.isVisible} onCheckedChange={(v) => setEditing({ ...editing, isVisible: v })} /><Label className="text-xs">Visible</Label></div>
-                <div className="flex items-center gap-2"><Switch checked={editing.isPro} onCheckedChange={(v) => setEditing({ ...editing, isPro: v })} /><Label className="text-xs">PRO only</Label></div>
-              </div>
-            </div>
+            ))}
           </CardContent>
         </Card>
-      ) : (
-        Object.entries(grouped).map(([cat, tools]) => (
-          <div key={cat}>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{cat}</p>
-            <div className="space-y-2">
-              {tools.map((t) => (
-                <Card key={t.id}><CardContent className="p-3 flex items-center gap-3">
-                  <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', t.isVisible ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground')}>
-                    <Layers className="h-4 w-4" />
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Rocket className="h-4 w-4 text-amber-500" /> Quick Links
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-2">
+            {quickLinks.map((q) => {
+              const Icon = q.i
+              return (
+                <Button
+                  key={q.l}
+                  variant="outline"
+                  className="h-auto justify-start py-3 px-3"
+                  onClick={() => onJump(q.t)}
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 mr-2">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-xs font-medium">{q.l}</p>
+                    <p className="text-[10px] text-muted-foreground">{q.v}</p>
+                  </div>
+                </Button>
+              )
+            })}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <History className="h-4 w-4 text-amber-500" /> Recent Activity
+            <span className="ml-auto text-[10px] font-normal text-muted-foreground">Last 5 audit logs</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {l2 || !logs || logs.logs.length === 0 ? (
+            <EmptyState icon={FileText} message="No recent activity yet. Generate something in AI Studio." />
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto scroll-thin">
+              {logs.logs.map((log, i) => (
+                <motion.div
+                  key={log.id}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/40"
+                >
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 shrink-0">
+                    <FileText className="h-4 w-4" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2"><p className="text-sm font-medium">{t.name}</p><code className="text-[10px] text-muted-foreground">{t.slug}</code></div>
-                    <p className="text-xs text-muted-foreground truncate">{t.description}</p>
+                    <p className="text-sm font-medium truncate">
+                      {log.provider?.name || '—'} · {log.toolSlug || log.requestType}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {log.requestType} · {timeAgo(log.createdAt)}
+                    </p>
                   </div>
-                  <div className="hidden sm:flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{t.creditCost}cr</span><span>temp {t.temperature}</span><span>{t.maxTokens}tok</span>
-                  </div>
-                  <Badge variant="secondary" className={cn('text-[10px]', t.outputType === 'MARKDOWN' ? '' : 'bg-primary/10 text-primary')}>{t.outputType}</Badge>
-                  {t.isPro && <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600">PRO</Badge>}
-                  <Badge variant="secondary" className={cn('text-[10px]', t.isVisible ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>{t.isVisible ? 'Visible' : 'Hidden'}</Badge>
-                  <Button size="sm" variant="outline" onClick={() => setEditing(t)}>Edit</Button>
-                </CardContent></Card>
+                  <StatusBadge status={log.status} />
+                  <span className="text-xs font-mono text-muted-foreground tabular-nums">
+                    {log.durationMs}ms
+                  </span>
+                </motion.div>
               ))}
             </div>
-          </div>
-        ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 2. Providers — full CRUD with test + rotate + edit dialog
+ * ========================================================================== */
+
+function ProvidersPanel() {
+  const { data, loading, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const [showKey, setShowKey] = useState<Record<string, boolean>>({})
+  const [testing, setTesting] = useState<string | null>(null)
+  const [rotating, setRotating] = useState<Provider | null>(null)
+  const [editing, setEditing] = useState<Provider | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  if (loading || !data) return <LoadingBlock />
+
+  const toggleActive = async (p: Provider, v: boolean) => {
+    await mutate('/api/admin/providers', 'PUT', { id: p.id, isActive: v }, `${p.name} ${v ? 'enabled' : 'disabled'}`)
+    refetch()
+  }
+
+  const testProvider = async (p: Provider) => {
+    setTesting(p.id)
+    try {
+      const res = await fetch(`/api/admin/providers/${p.id}/test`, { method: 'POST' })
+      const d = (await res.json()) as { success?: boolean; latencyMs?: number; message?: string }
+      if (d.success) toast.success(`${p.name}: healthy (${d.latencyMs}ms)`)
+      else toast.error(`${p.name}: ${d.message || 'test failed'}`)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Test failed')
+    } finally {
+      setTesting(null)
+    }
+  }
+
+  const submitRotate = async (newKey: string) => {
+    if (!rotating) return
+    if (newKey.trim().length < 8) {
+      toast.error('Key must be at least 8 characters')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/providers/${rotating.id}/rotate-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newKey }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error((d as { error?: string }).error || 'Rotate failed')
+      toast.success(`${rotating.name} key rotated`)
+      setRotating(null)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Rotate failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const submitEdit = async (patch: Record<string, unknown>) => {
+    if (!editing) return
+    setSaving(true)
+    const ok = await mutate('/api/admin/providers', 'PUT', { id: editing.id, ...patch }, `${editing.name} updated`)
+    setSaving(false)
+    if (ok.ok) {
+      setEditing(null)
+      refetch()
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardContent className="p-4 flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground">
+            API keys are <span className="font-medium text-amber-600">masked</span> server-side and never exposed to creators.
+            Smart routing auto-selects the best provider per route category, with automatic fallback when a provider fails.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {data.providers.map((p, i) => (
+          <motion.div
+            key={p.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: Math.min(i * 0.02, 0.3) }}
+          >
+            <Card className="h-full flex flex-col">
+              <CardHeader className="pb-3 flex-row items-center justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg shrink-0', p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}>
+                    <Server className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">{p.name}</p>
+                    <code className="text-[10px] text-muted-foreground">{p.slug}</code>
+                  </div>
+                </div>
+                <Switch checked={p.isActive} onCheckedChange={(v) => toggleActive(p, v)} />
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col gap-3">
+                <CapBadges capabilities={p.capabilities} />
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-md bg-muted/50 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Cost Today</p>
+                    <p className="text-xs font-semibold tabular-nums">{p.todayCost > 0 ? fmtMoney(p.todayCost) : '—'}</p>
+                  </div>
+                  <div className="rounded-md bg-muted/50 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Requests</p>
+                    <p className="text-xs font-semibold tabular-nums">{p.todayRequests || 0}</p>
+                  </div>
+                  <div className="rounded-md bg-muted/50 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Failures</p>
+                    <p className={cn('text-xs font-semibold tabular-nums', p.todayFailures > 0 ? 'text-red-600' : '')}>
+                      {p.todayFailures || 0}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs">
+                  <HealthDot healthy={p.isHealthy} />
+                  <span className="text-muted-foreground">
+                    {p.lastHealthCheck ? `checked ${timeAgo(p.lastHealthCheck)}` : 'not tested'}
+                  </span>
+                </div>
+
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Masked API Key</Label>
+                  <div className="flex gap-1.5 mt-1">
+                    <Input
+                      type={showKey[p.id] ? 'text' : 'password'}
+                      value={p.maskedApiKey || '(not set)'}
+                      readOnly
+                      className="font-mono text-xs h-8"
+                    />
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => setShowKey((s) => ({ ...s, [p.id]: !s[p.id] }))}
+                    >
+                      {showKey[p.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-muted-foreground">
+                  <span className="font-medium">{p.modelsCount}</span> models ·{' '}
+                  <span className="font-medium">{p.keysCount}</span> keys
+                  {p.dailyBudget > 0 && <> · ${p.dailyBudget}/day budget</>}
+                </div>
+
+                <div className="flex gap-2 mt-auto pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 h-8 text-xs"
+                    disabled={testing === p.id}
+                    onClick={() => testProvider(p)}
+                  >
+                    {testing === p.id ? (
+                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Testing</>
+                    ) : (
+                      <><Wifi className="h-3 w-3 mr-1" />Test</>
+                    )}
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => setRotating(p)}>
+                    <RefreshCw className="h-3 w-3 mr-1" />Rotate
+                  </Button>
+                  <Button size="sm" variant="outline" className="flex-1 h-8 text-xs" onClick={() => setEditing(p)}>
+                    <Settings2 className="h-3 w-3 mr-1" />Edit
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Rotate Key Dialog */}
+      <RotateKeyDialog
+        provider={rotating}
+        saving={saving}
+        onClose={() => setRotating(null)}
+        onSubmit={submitRotate}
+      />
+
+      {/* Edit Provider Dialog */}
+      {editing && (
+        <EditProviderDialog
+          provider={editing}
+          allProviders={data.providers}
+          saving={saving}
+          onClose={() => setEditing(null)}
+          onSubmit={submitEdit}
+        />
       )}
     </div>
   )
 }
 
-// ===== AI Providers =====
-function ProvidersPanel() {
-  const { data, loading, refetch } = useApi<{ providers: ({id: string; name: string; slug: string; apiKey: string; baseUrl: string; isActive: boolean; priority: number; models: {id: string; name: string; displayName: string; isDefault: boolean; isActive: boolean; costMultiplier: number}[]})[] }>('/api/admin/providers')
-  const [showKey, setShowKey] = useState<Record<string, boolean>>({})
+function RotateKeyDialog({
+  provider, saving, onClose, onSubmit,
+}: {
+  provider: Provider | null
+  saving: boolean
+  onClose: () => void
+  onSubmit: (newKey: string) => void
+}) {
+  const [newKey, setNewKey] = useState('')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNewKey('')
+  }, [provider])
+  return (
+    <Dialog open={!!provider} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 text-amber-500" /> Rotate API Key
+          </DialogTitle>
+          <DialogDescription>
+            Replace the active key for <span className="font-medium text-amber-600">{provider?.name}</span>.
+            The previous key will be deactivated and preserved in the audit trail.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <Label className="text-xs">Current Masked Key</Label>
+            <Input value={provider?.maskedApiKey || ''} readOnly className="mt-1 font-mono text-xs" />
+          </div>
+          <div>
+            <Label className="text-xs">New Key (min 8 chars)</Label>
+            <Textarea
+              className="mt-1 font-mono text-xs"
+              rows={3}
+              placeholder="paste new API key here..."
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={saving} onClick={() => onSubmit(newKey)}>
+            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+            Rotate Key
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
+function EditProviderDialog({
+  provider, allProviders, saving, onClose, onSubmit,
+}: {
+  provider: Provider
+  allProviders: Provider[]
+  saving: boolean
+  onClose: () => void
+  onSubmit: (patch: Record<string, unknown>) => void
+}) {
+  const [form, setForm] = useState({
+    baseUrl: '',
+    dailyBudget: provider.dailyBudget || 0,
+    monthlyBudget: provider.monthlyBudget || 0,
+    timeout: 30,
+    retries: 2,
+    concurrency: 5,
+    fallbackProviderId: '',
+    description: provider.description || '',
+  })
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-amber-500" /> Edit {provider.name}
+          </DialogTitle>
+          <DialogDescription>Configure budgets, timeout, and fallback provider.</DialogDescription>
+        </DialogHeader>
+        <div className="grid sm:grid-cols-2 gap-3 py-2">
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Base URL (optional)</Label>
+            <Input
+              className="mt-1 font-mono text-xs"
+              placeholder="https://api.example.com/v1"
+              value={form.baseUrl}
+              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Daily Budget ($)</Label>
+            <Input
+              type="number" step="0.01" min="0"
+              className="mt-1"
+              value={form.dailyBudget}
+              onChange={(e) => setForm({ ...form, dailyBudget: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Monthly Budget ($)</Label>
+            <Input
+              type="number" step="0.01" min="0"
+              className="mt-1"
+              value={form.monthlyBudget}
+              onChange={(e) => setForm({ ...form, monthlyBudget: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Timeout (sec)</Label>
+            <Input
+              type="number" min="1"
+              className="mt-1"
+              value={form.timeout}
+              onChange={(e) => setForm({ ...form, timeout: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Retries</Label>
+            <Input
+              type="number" min="0" max="10"
+              className="mt-1"
+              value={form.retries}
+              onChange={(e) => setForm({ ...form, retries: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Concurrency</Label>
+            <Input
+              type="number" min="1" max="100"
+              className="mt-1"
+              value={form.concurrency}
+              onChange={(e) => setForm({ ...form, concurrency: Number(e.target.value) })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Fallback Provider</Label>
+            <Select
+              value={form.fallbackProviderId || 'none'}
+              onValueChange={(v) => setForm({ ...form, fallbackProviderId: v === 'none' ? '' : v })}
+            >
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No fallback</SelectItem>
+                {allProviders.filter((p) => p.id !== provider.id).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Description</Label>
+            <Textarea
+              className="mt-1 text-xs"
+              rows={2}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={saving} onClick={() => onSubmit(form)}>
+            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+            Save Changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ============================================================================
+ * 3. API Keys — all keys across providers with rotate dialog
+ * ========================================================================== */
+
+function ApiKeysPanel() {
+  const { data: provData, loading: l1, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const [keys, setKeys] = useState<Array<ProviderKey & { providerName: string; providerSlug: string }>>([])
+  const [loadingKeys, setLoadingKeys] = useState(true)
+  const [rotating, setRotating] = useState<{ id: string; name: string } | null>(null)
+  const [newKey, setNewKey] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // Fetch detailed keys for each provider in parallel
+  useEffect(() => {
+    if (!provData?.providers?.length) return
+    let active = true
+    setLoadingKeys(true)
+    Promise.all(
+      provData.providers.map(async (p) => {
+        try {
+          const res = await fetch(`/api/admin/providers/${p.id}`)
+          if (!res.ok) return [] as Array<ProviderKey & { providerName: string; providerSlug: string }>
+          const d = (await res.json()) as { provider: { keys: ProviderKey[] } }
+          return d.provider.keys.map((k) => ({
+            ...k,
+            providerName: p.name,
+            providerSlug: p.slug,
+          }))
+        } catch {
+          return [] as Array<ProviderKey & { providerName: string; providerSlug: string }>
+        }
+      })
+    ).then((results) => {
+      if (!active) return
+      setKeys(results.flat())
+      setLoadingKeys(false)
+    })
+    return () => { active = false }
+  }, [provData])
+
+  const doRotate = async () => {
+    if (!rotating) return
+    if (newKey.trim().length < 8) {
+      toast.error('Key must be at least 8 characters')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/providers/${rotating.id}/rotate-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newKey }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error((d as { error?: string }).error || 'Rotate failed')
+      toast.success(`${rotating.name} key rotated`)
+      setRotating(null)
+      setNewKey('')
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Rotate failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (l1) return <LoadingBlock />
 
   return (
     <div className="space-y-4">
       <Card className="border-amber-500/20 bg-amber-500/5">
-        <CardContent className="p-4 flex items-center gap-3">
-          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0" />
-          <p className="text-xs text-muted-foreground">API keys are encrypted at rest and never exposed to the client. Smart routing automatically selects the highest-priority active provider.</p>
+        <CardContent className="p-4 flex items-start gap-3">
+          <KeySquare className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground">
+            All API keys across providers. Plain-text keys are never returned by the API — only the
+            <span className="font-medium text-amber-600"> masked</span> value is shown here.
+            Rotate keys regularly for security.
+          </p>
         </CardContent>
       </Card>
-      {data.providers.map((p) => (
-        <Card key={p.id}>
-          <CardHeader className="flex-row items-center justify-between pb-3">
-            <div className="flex items-center gap-3">
-              <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}><Server className="h-5 w-5" /></div>
-              <div><p className="font-semibold text-sm">{p.name}</p><p className="text-xs text-muted-foreground">Priority {p.priority} · {p.models.length} models</p></div>
+
+      <Card>
+        <CardContent className="p-0">
+          {loadingKeys ? (
+            <div className="p-4 space-y-2">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 rounded-md" />)}
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className={cn('text-[10px]', p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>{p.isActive ? 'Active' : 'Disabled'}</Badge>
-              <Switch checked={p.isActive} onCheckedChange={async (v) => { await fetch('/api/admin/providers', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, isActive: v }) }); toast.success(`${p.name} ${v ? 'enabled' : 'disabled'}`); refetch() }} />
+          ) : keys.length === 0 ? (
+            <EmptyState icon={KeyRound} message="No API keys configured. Add keys via the Providers tab." />
+          ) : (
+            <div className="max-h-[600px] overflow-y-auto scroll-thin">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card border-b">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Provider</th>
+                    <th className="px-3 py-2 font-medium">Label</th>
+                    <th className="px-3 py-2 font-medium">Masked Key</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Last Used</th>
+                    <th className="px-3 py-2 font-medium">Last Rotated</th>
+                    <th className="px-3 py-2 font-medium text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {keys.map((k, i) => (
+                    <motion.tr
+                      key={k.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(i * 0.01, 0.2) }}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <Server className="h-3.5 w-3.5 text-amber-500" />
+                          <div>
+                            <p className="text-xs font-medium">{k.providerName}</p>
+                            <code className="text-[10px] text-muted-foreground">{k.providerSlug}</code>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">{k.label || 'Primary'}</td>
+                      <td className="px-3 py-2.5">
+                        <code className="text-[11px] font-mono text-muted-foreground">{k.maskedValue || '—'}</code>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="secondary" className={cn('text-[10px]', k.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}>
+                          {k.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] text-muted-foreground">
+                        {k.lastUsedAt ? timeAgo(k.lastUsedAt) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] text-muted-foreground">
+                        {k.lastRotatedAt ? timeAgo(k.lastRotatedAt) : 'never'}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={!k.isActive}
+                          onClick={() => {
+                            setRotating({ id: k.providerId || '', name: k.providerName })
+                            setNewKey('')
+                          }}
+                        >
+                          <RefreshCw className="h-3 w-3 mr-1" />Rotate
+                        </Button>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="grid sm:grid-cols-2 gap-3">
-              <div><Label className="text-xs">API Key</Label>
-                <div className="flex gap-2 mt-1">
-                  <Input type={showKey[p.id] ? 'text' : 'password'} value={p.apiKey || '(not set)'} readOnly className="font-mono text-xs" />
-                  <Button size="icon" variant="outline" onClick={() => setShowKey((s) => ({ ...s, [p.id]: !s[p.id] }))}>{showKey[p.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</Button>
-                </div>
-              </div>
-              <div><Label className="text-xs">Base URL</Label><Input value={p.baseUrl || '(default)'} readOnly className="mt-1 text-xs font-mono" /></div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold mb-1.5">Models</p>
-              <div className="space-y-1.5">
-                {p.models.map((m) => (
-                  <div key={m.id} className="flex items-center gap-3 rounded-lg border p-2.5">
-                    <Cpu className={cn('h-4 w-4', m.isActive ? 'text-emerald-500' : 'text-muted-foreground')} />
-                    <div className="flex-1"><p className="text-xs font-medium">{m.displayName}</p><p className="text-[10px] text-muted-foreground">{m.name} · {m.costMultiplier}x cost</p></div>
-                    {m.isDefault && <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary">Default</Badge>}
-                    <Badge variant="secondary" className={cn('text-[10px]', m.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>{m.isActive ? 'Active' : 'Off'}</Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!rotating} onOpenChange={(o) => !o && setRotating(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-amber-500" /> Rotate Key
+            </DialogTitle>
+            <DialogDescription>
+              Enter the new API key for <span className="font-medium text-amber-600">{rotating?.name}</span>.
+              The old key will be deactivated and stored in the audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label className="text-xs">New API Key</Label>
+            <Textarea
+              className="mt-1 font-mono text-xs"
+              rows={3}
+              placeholder="paste new key..."
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRotating(null)}>Cancel</Button>
+            <Button disabled={saving} onClick={doRotate}>
+              {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1.5" />}
+              Rotate Key
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-// ===== Model Routing =====
-function RoutingPanel() {
+/* ============================================================================
+ * 4. Models — filter by provider/modality, default + active toggles, add dialog
+ * ========================================================================== */
+
+function ModelsPanel() {
+  const [providerFilter, setProviderFilter] = useState('all')
+  const [modalityFilter, setModalityFilter] = useState('all')
+  const query = useMemo(
+    () => {
+      const params = new URLSearchParams()
+      if (providerFilter !== 'all') params.set('providerId', providerFilter)
+      if (modalityFilter !== 'all') params.set('modality', modalityFilter)
+      const q = params.toString()
+      return `/api/admin/models${q ? `?${q}` : ''}`
+    },
+    [providerFilter, modalityFilter],
+  )
+  const { data, loading, refetch } = useApi<{ models: ModelRow[] }>(query)
+  const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const [adding, setAdding] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  const toggleField = async (m: ModelRow, field: 'isActive' | 'isDefault', v: boolean) => {
+    setTogglingId(m.id)
+    const ok = await mutate('/api/admin/models', 'PUT', { id: m.id, [field]: v }, `${m.displayName} ${field} ${v ? 'on' : 'off'}`)
+    setTogglingId(null)
+    if (ok.ok) refetch()
+  }
+
+  if (loading || !data) return <LoadingBlock />
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Cpu className="h-4 w-4 text-amber-500" />Smart Routing Strategy</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          {[
-            { id: 'smart', name: 'Smart AI (Recommended)', desc: 'Auto-selects the best model per task based on output type, cost, and latency', active: true },
-            { id: 'cost', name: 'Cost Optimized', desc: 'Always picks the cheapest active model that can handle the task', active: false },
-            { id: 'quality', name: 'Quality First', desc: 'Always picks the highest-capability model, regardless of cost', active: false },
-            { id: 'round', name: 'Round Robin', desc: 'Distributes requests evenly across all active providers', active: false },
-          ].map((s) => (
-            <div key={s.id} className={cn('flex items-start gap-3 rounded-lg border p-3 cursor-pointer', s.active && 'border-primary bg-primary/5')}>
-              <div className={cn('flex h-5 w-5 mt-0.5 items-center justify-center rounded-full border-2', s.active ? 'border-primary bg-primary' : 'border-muted-foreground')}>
-                {s.active && <Check className="h-3 w-3 text-primary-foreground" />}
-              </div>
-              <div className="flex-1"><p className="text-sm font-medium">{s.name}</p><p className="text-xs text-muted-foreground mt-0.5">{s.desc}</p></div>
-            </div>
-          ))}
+        <CardContent className="p-3 flex flex-wrap gap-2 items-center">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={providerFilter} onValueChange={setProviderFilter}>
+            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="All Providers" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Providers</SelectItem>
+              {provData?.providers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={modalityFilter} onValueChange={setModalityFilter}>
+            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="All Modalities" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Modalities</SelectItem>
+              {MODALITIES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{data.models.length} models</span>
+            <Button size="sm" className="h-8" onClick={() => setAdding(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" />Add Model
+            </Button>
+          </div>
         </CardContent>
       </Card>
-      <Card className="border-emerald-500/20 bg-emerald-500/5">
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600"><Check className="h-5 w-5" /></div>
-          <div><p className="text-sm font-medium">Fallback enabled</p><p className="text-xs text-muted-foreground">If the primary provider fails, requests automatically retry on the next active provider.</p></div>
-          <Switch defaultChecked />
-        </CardContent>
-      </Card>
+
+      {data.models.length === 0 ? (
+        <Card><CardContent className="p-0"><EmptyState icon={Cpu} message="No models found. Try adjusting filters." /></CardContent></Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[640px] overflow-y-auto scroll-thin pr-1">
+          {data.models.map((m, i) => {
+            const modColor: Record<string, string> = {
+              TEXT: 'bg-amber-500/10 text-amber-600',
+              IMAGE: 'bg-violet-500/10 text-violet-600',
+              VIDEO: 'bg-violet-500/10 text-violet-600',
+              AUDIO: 'bg-sky-500/10 text-sky-600',
+              EMBEDDING: 'bg-emerald-500/10 text-emerald-600',
+              STT: 'bg-sky-500/10 text-sky-600',
+              TTS: 'bg-sky-500/10 text-sky-600',
+            }
+            return (
+              <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}>
+                <Card>
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{m.displayName}</p>
+                        <code className="text-[10px] text-muted-foreground">{m.name}</code>
+                      </div>
+                      <Badge variant="secondary" className={cn('text-[9px] px-1.5 shrink-0', modColor[m.modality] || 'bg-muted')}>
+                        {m.modality}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">
+                        {m.provider.name}
+                      </Badge>
+                      {m.isDefault && (
+                        <Badge variant="secondary" className="text-[9px] bg-emerald-500/10 text-emerald-600">Default</Badge>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
+                      <div>In: <span className="font-mono text-foreground">${m.inputCostPer1k}/1k</span></div>
+                      <div>Out: <span className="font-mono text-foreground">${m.outputCostPer1k}/1k</span></div>
+                      <div>Cost ×<span className="font-mono text-foreground">{m.costMultiplier}</span></div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={m.isActive}
+                          disabled={togglingId === m.id}
+                          onCheckedChange={(v) => toggleField(m, 'isActive', v)}
+                        />
+                        <span className="text-[10px] text-muted-foreground">Active</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">Default</span>
+                        <Switch
+                          checked={m.isDefault}
+                          disabled={togglingId === m.id}
+                          onCheckedChange={(v) => toggleField(m, 'isDefault', v)}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )
+          })}
+        </div>
+      )}
+
+      {adding && (
+        <AddModelDialog
+          providers={provData?.providers || []}
+          onClose={() => setAdding(false)}
+          onSaved={() => { setAdding(false); refetch() }}
+        />
+      )}
     </div>
   )
 }
 
-// ===== Feature Flags =====
-function FlagsPanel() {
-  const { data, loading, refetch } = useApi<{ flags: {id: string; key: string; name: string; description: string; enabled: boolean}[] }>('/api/admin/flags')
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
+function AddModelDialog({
+  providers, onClose, onSaved,
+}: {
+  providers: Provider[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState({
+    providerId: providers[0]?.id || '',
+    name: '',
+    displayName: '',
+    modality: 'TEXT',
+    inputCostPer1k: 0,
+    outputCostPer1k: 0,
+    costMultiplier: 1,
+    isDefault: false,
+    isActive: true,
+  })
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    if (!form.providerId || !form.name || !form.displayName) {
+      toast.error('Provider, name, and display name are required')
+      return
+    }
+    setSaving(true)
+    const ok = await mutate('/api/admin/models', 'POST', form, `${form.displayName} created`)
+    setSaving(false)
+    if (ok.ok) onSaved()
+  }
+
   return (
-    <div className="space-y-2">
-      {data.flags.map((f) => (
-        <Card key={f.id}><CardContent className="p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', f.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}><ToggleLeft className="h-5 w-5" /></div>
-            <div><div className="flex items-center gap-2"><p className="text-sm font-medium">{f.name}</p><code className="text-[10px] text-muted-foreground">{f.key}</code></div><p className="text-xs text-muted-foreground">{f.description}</p></div>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="h-4 w-4 text-amber-500" /> Add Model
+          </DialogTitle>
+          <DialogDescription>Create a new AI model entry on a provider.</DialogDescription>
+        </DialogHeader>
+        <div className="grid sm:grid-cols-2 gap-3 py-2">
+          <div>
+            <Label className="text-xs">Provider</Label>
+            <Select value={form.providerId} onValueChange={(v) => setForm({ ...form, providerId: v })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {providers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className={cn('text-[10px]', f.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>{f.enabled ? 'Enabled' : 'Disabled'}</Badge>
-            <Switch checked={f.enabled} onCheckedChange={async (v) => { await fetch('/api/admin/flags', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: f.id, enabled: v }) }); toast.success(`${f.name} ${v ? 'enabled' : 'disabled'}`); refetch() }} />
+          <div>
+            <Label className="text-xs">Modality</Label>
+            <Select value={form.modality} onValueChange={(v) => setForm({ ...form, modality: v })}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {MODALITIES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
-        </CardContent></Card>
-      ))}
-    </div>
+          <div>
+            <Label className="text-xs">Model Name (API id)</Label>
+            <Input className="mt-1 font-mono text-xs" placeholder="gpt-4-turbo" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs">Display Name</Label>
+            <Input className="mt-1" placeholder="GPT-4 Turbo" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} />
+          </div>
+          <div>
+            <Label className="text-xs">Input Cost ($/1k tokens)</Label>
+            <Input type="number" step="0.0001" min="0" className="mt-1" value={form.inputCostPer1k} onChange={(e) => setForm({ ...form, inputCostPer1k: Number(e.target.value) })} />
+          </div>
+          <div>
+            <Label className="text-xs">Output Cost ($/1k tokens)</Label>
+            <Input type="number" step="0.0001" min="0" className="mt-1" value={form.outputCostPer1k} onChange={(e) => setForm({ ...form, outputCostPer1k: Number(e.target.value) })} />
+          </div>
+          <div>
+            <Label className="text-xs">Cost Multiplier</Label>
+            <Input type="number" step="0.1" min="0" className="mt-1" value={form.costMultiplier} onChange={(e) => setForm({ ...form, costMultiplier: Number(e.target.value) })} />
+          </div>
+          <div className="flex items-end gap-4 pb-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={form.isActive} onCheckedChange={(v) => setForm({ ...form, isActive: v })} />
+              <span className="text-xs">Active</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={form.isDefault} onCheckedChange={(v) => setForm({ ...form, isDefault: v })} />
+              <span className="text-xs">Default</span>
+            </label>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={saving} onClick={submit}>
+            {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Plus className="h-4 w-4 mr-1.5" />}
+            Create Model
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-// ===== Generations log =====
-function GenerationsPanel() {
-  const { data, loading } = useApi<{ generations: {id: string; toolSlug: string; title: string; status: string; creditsUsed: number; createdAt: string}[] }>('/api/admin/generations')
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
-  return (
-    <Card><CardContent className="p-0">
-      <div className="max-h-[600px] overflow-y-auto scroll-thin">
-        {data.generations.length === 0 ? (
-          <div className="p-8 text-center text-sm text-muted-foreground">No generations yet. Generate something in AI Studio!</div>
-        ) : data.generations.map((g, i) => (
-          <motion.div key={g.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-            className="flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/50">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"><History className="h-4 w-4" /></div>
-            <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{g.title}</p><p className="text-xs text-muted-foreground">{g.toolSlug} · {new Date(g.createdAt).toLocaleString()}</p></div>
-            <Badge variant="secondary" className={cn('text-[10px]', g.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{g.status}</Badge>
-            <span className="text-xs font-semibold text-amber-600 tabular-nums">-{g.creditsUsed}cr</span>
-          </motion.div>
-        ))}
-      </div>
-    </CardContent></Card>
-  )
-}
+/* ============================================================================
+ * 5. Routing — 14 categories with provider + fallback + strategy
+ * ========================================================================== */
 
-// ===== Global Settings =====
-function SettingsPanel() {
-  const { data, loading, refetch } = useApi<{ settings: {id: string; key: string; value: string; category: string}[] }>('/api/admin/settings')
-  const [editing, setEditing] = useState<Record<string, string>>({})
-  const [savingKey, setSavingKey] = useState<string | null>(null)
+function RoutingPanel() {
+  const { data: routeData, loading: l1, refetch } = useApi<{ routes: RouteRow[] }>('/api/admin/routing')
+  const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const [drafts, setDrafts] = useState<Record<string, { providerId: string; fallbackProviderId: string; strategy: string; isActive: boolean }>>({})
+  const [saving, setSaving] = useState<string | null>(null)
 
-  if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
+  const activeProviders = useMemo(() => (provData?.providers || []).filter((p) => p.isActive), [provData])
 
-  const grouped = data.settings.reduce<Record<string, typeof data.settings>>((acc, s) => { (acc[s.category] ||= []).push(s); return acc }, {})
-  const CAT_ICON: Record<string, React.ComponentType<{ className?: string }>> = { general: Settings2, billing: DollarSign, ai: Cpu, storage: Database, email: Server }
+  // Build a category -> route map
+  const routeMap = useMemo(() => {
+    const m = new Map<string, RouteRow>()
+    routeData?.routes.forEach((r) => m.set(r.toolCategory, r))
+    return m
+  }, [routeData])
 
-  const save = async (id: string, key: string) => {
-    setSavingKey(key)
-    try {
-      await fetch('/api/admin/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, value: editing[key] }) })
-      toast.success(`${key} updated`); setEditing((e) => { const n = { ...e }; delete n[key]; return n }); refetch()
-    } catch { toast.error('Failed') } finally { setSavingKey(null) }
+  if (l1 || !routeData) return <LoadingBlock />
+
+  const getDraft = (cat: string, r: RouteRow | undefined) => {
+    if (drafts[cat]) return drafts[cat]
+    return {
+      providerId: r?.providerId || '',
+      fallbackProviderId: r?.fallbackProviderId || '',
+      strategy: r?.strategy || 'smart',
+      isActive: r?.isActive ?? true,
+    }
+  }
+
+  const save = async (cat: string) => {
+    const r = routeMap.get(cat)
+    if (!r) {
+      toast.error('Route not found — seed it first via API')
+      return
+    }
+    const draft = getDraft(cat, r)
+    setSaving(cat)
+    const ok = await mutate('/api/admin/routing', 'PUT', { id: r.id, ...draft }, `${cat} routing updated`)
+    setSaving(null)
+    if (ok.ok) {
+      setDrafts((d) => { const n = { ...d }; delete n[cat]; return n })
+      refetch()
+    }
   }
 
   return (
     <div className="space-y-4">
-      {Object.entries(grouped).map(([cat, settings]) => {
-        const Icon = CAT_ICON[cat] || Settings2
-        return (
-          <Card key={cat}>
-            <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Icon className="h-4 w-4 text-amber-500" />{cat.charAt(0).toUpperCase() + cat.slice(1)}</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              {settings.map((s) => (
-                <div key={s.id} className="flex items-center gap-3">
-                  <code className="text-xs text-muted-foreground w-44 shrink-0 truncate">{s.key}</code>
-                  <Input value={editing[s.key] ?? s.value} onChange={(e) => setEditing((ed) => ({ ...ed, [s.key]: e.target.value }))} className="text-xs h-8" />
-                  {editing[s.key] !== undefined && editing[s.key] !== s.value && (
-                    <Button size="sm" className="h-8" onClick={() => save(s.id, s.key)} disabled={savingKey === s.key}>
-                      {savingKey === s.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                    </Button>
-                  )}
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardContent className="p-4 flex items-start gap-3">
+          <ArrowRightLeft className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground">
+            Smart routing maps each tool category to a primary provider with optional fallback.
+            Strategy <code className="font-mono text-amber-600">smart</code> picks the best model per request,
+            <code className="font-mono text-amber-600"> cost</code> optimizes for spend,
+            <code className="font-mono text-amber-600"> quality</code> picks highest capability,
+            <code className="font-mono text-amber-600"> round_robin</code> distributes load.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {ROUTE_CATEGORIES.map(({ name, desc }) => {
+          const r = routeMap.get(name)
+          const draft = getDraft(name, r)
+          return (
+            <Card key={name}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">{name}</p>
+                    <p className="text-[11px] text-muted-foreground">{desc}</p>
+                  </div>
+                  <Switch
+                    checked={draft.isActive}
+                    onCheckedChange={(v) => setDrafts((d) => ({ ...d, [name]: { ...draft, isActive: v } }))}
+                  />
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-        )
-      })}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Provider</Label>
+                    <Select
+                      value={draft.providerId || 'none'}
+                      onValueChange={(v) => setDrafts((d) => ({ ...d, [name]: { ...draft, providerId: v === 'none' ? '' : v } }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {activeProviders.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">Fallback</Label>
+                    <Select
+                      value={draft.fallbackProviderId || 'none'}
+                      onValueChange={(v) => setDrafts((d) => ({ ...d, [name]: { ...draft, fallbackProviderId: v === 'none' ? '' : v } }))}
+                    >
+                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— None —</SelectItem>
+                        {activeProviders.filter((p) => p.id !== draft.providerId).map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-[10px] text-muted-foreground">Strategy</Label>
+                  <Select
+                    value={draft.strategy}
+                    onValueChange={(v) => setDrafts((d) => ({ ...d, [name]: { ...draft, strategy: v } }))}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STRATEGIES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" className="h-7 ml-auto text-xs" disabled={saving === name} onClick={() => save(name)}>
+                    {saving === name ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                    Save
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-// ===== Platform overview =====
-function PlatformPanel() {
+/* ============================================================================
+ * 6. Credits — totals + recent transactions
+ * ========================================================================== */
+
+function CreditsPanel() {
+  const { data, loading } = useApi<CreditsData>('/api/admin/credits')
+  if (loading || !data) return <LoadingBlock />
+
+  const { summary, recent } = data
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          { l: 'Total Users', v: '10,112', i: Users, c: 'text-emerald-500' },
-          { l: 'Workspaces', v: '1,240', i: Layers, c: 'text-primary' },
-          { l: 'MRR', v: '$24.8K', i: DollarSign, c: 'text-amber-500' },
-          { l: 'Storage Used', v: '142 GB', i: Database, c: 'text-sky-500' },
-        ].map((s) => { const Icon = s.i; return (
-          <Card key={s.l}><CardContent className="p-4 flex items-center gap-3">
-            <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg bg-muted', s.c)}><Icon className="h-4 w-4" /></div>
-            <div><p className="text-lg font-bold tabular-nums leading-none">{s.v}</p><p className="text-[11px] text-muted-foreground mt-1">{s.l}</p></div>
-          </CardContent></Card>
-        )})}
+        <StatCard icon={Coins} label="Total Issued" value={formatNumber(summary.totalIssued)} accent="emerald" />
+        <StatCard icon={TrendingDown} label="Total Spent" value={formatNumber(summary.totalSpent)} accent="red" />
+        <StatCard icon={Wallet} label="In Circulation" value={formatNumber(summary.inCirculation)} accent="amber" />
+        <StatCard icon={UserCheck} label="Active Users" value={formatNumber(summary.totalUsers)} accent="sky" />
       </div>
+
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Activity className="h-4 w-4 text-amber-500" />System Health</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          {[
-            { s: 'API Gateway', st: 'Operational', up: 99.98 },
-            { s: 'AI Provider (Z.ai)', st: 'Operational', up: 99.95 },
-            { s: 'Database', st: 'Operational', up: 100 },
-            { s: 'File Storage', st: 'Operational', up: 99.99 },
-            { s: 'Email Delivery', st: 'Degraded', up: 97.2 },
-          ].map((x) => (
-            <div key={x.s} className="flex items-center justify-between rounded-lg border p-2.5">
-              <div className="flex items-center gap-2"><span className={cn('h-2 w-2 rounded-full', x.st === 'Operational' ? 'bg-emerald-500' : 'bg-amber-500')} /><span className="text-sm">{x.s}</span></div>
-              <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{x.up}% uptime</span><Badge variant="secondary" className={cn('text-[10px]', x.st === 'Operational' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600')}>{x.st}</Badge></div>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <History className="h-4 w-4 text-amber-500" /> Recent Transactions
+            <span className="ml-auto text-[10px] font-normal text-muted-foreground">Last 20</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {recent.length === 0 ? (
+            <EmptyState icon={Coins} message="No transactions yet." />
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto scroll-thin">
+              {recent.map((t, i) => (
+                <motion.div
+                  key={t.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: Math.min(i * 0.02, 0.3) }}
+                  className="flex items-center gap-3 p-3 border-b last:border-0 hover:bg-muted/40"
+                >
+                  <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg shrink-0', t.amount >= 0 ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600')}>
+                    {t.amount >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{t.reason}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {t.user?.name || t.user?.email || 'Unknown'} · {timeAgo(t.createdAt)}
+                    </p>
+                  </div>
+                  <span className={cn('text-sm font-semibold tabular-nums', t.amount >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                    {t.amount >= 0 ? '+' : ''}{formatNumber(t.amount)} cr
+                  </span>
+                </motion.div>
+              ))}
             </div>
-          ))}
+          )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// local icon for credits panel
+function Wallet({ className }: { className?: string }) {
+  return <Coins className={className} />
+}
+
+/* ============================================================================
+ * 7. Storage — per-workspace usage with quota update
+ * ========================================================================== */
+
+function StoragePanel() {
+  const { data, loading, refetch } = useApi<StorageData>('/api/admin/storage')
+  const [editing, setEditing] = useState<StorageWorkspace | null>(null)
+  const [newQuota, setNewQuota] = useState('10')
+  const [saving, setSaving] = useState(false)
+
+  if (loading || !data) return <LoadingBlock />
+
+  const submitQuota = async () => {
+    if (!editing) return
+    const gb = Number(newQuota)
+    if (!Number.isFinite(gb) || gb < 0) {
+      toast.error('Quota must be a non-negative number')
+      return
+    }
+    setSaving(true)
+    const ok = await mutate('/api/admin/storage', 'PATCH', {
+      workspaceId: editing.workspaceId,
+      quotaBytes: Math.floor(gb * 1024 * 1024 * 1024),
+    }, 'Quota updated')
+    setSaving(false)
+    if (ok.ok) {
+      setEditing(null)
+      refetch()
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={HardDrive} label="Total Used" value={fmtBytes(data.totals.total)} accent="sky" />
+        <StatCard icon={Database} label="Quota" value={fmtBytes(data.totals.quota)} accent="emerald" />
+        <StatCard icon={Layers} label="Workspaces" value={data.totals.workspaceCount} accent="amber" />
+        <StatCard icon={Boxes} label="Asset Count" value={formatNumber(data.totals.assets)} accent="violet" />
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <HardDrive className="h-4 w-4 text-amber-500" /> Per-Workspace Storage
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {data.workspaces.length === 0 ? (
+            <EmptyState icon={HardDrive} message="No workspace storage records yet." />
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto scroll-thin">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card border-b">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Workspace</th>
+                    <th className="px-3 py-2 font-medium text-right">Images</th>
+                    <th className="px-3 py-2 font-medium text-right">Videos</th>
+                    <th className="px-3 py-2 font-medium text-right">Audio</th>
+                    <th className="px-3 py-2 font-medium text-right">Docs</th>
+                    <th className="px-3 py-2 font-medium text-right">Total</th>
+                    <th className="px-3 py-2 font-medium">Usage</th>
+                    <th className="px-3 py-2 font-medium text-right">Assets</th>
+                    <th className="px-3 py-2 font-medium text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.workspaces.map((w) => {
+                    const pct = w.usagePercent
+                    const accent = pct >= 90 ? 'red' : pct >= 70 ? 'amber' : 'emerald'
+                    return (
+                      <tr key={w.workspaceId} className="border-b last:border-0 hover:bg-muted/40">
+                        <td className="px-3 py-2.5">
+                          <code className="text-xs font-mono">{w.workspaceId}</code>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right tabular-nums">{fmtBytes(w.imagesBytes)}</td>
+                        <td className="px-3 py-2.5 text-xs text-right tabular-nums">{fmtBytes(w.videosBytes)}</td>
+                        <td className="px-3 py-2.5 text-xs text-right tabular-nums">{fmtBytes(w.audioBytes)}</td>
+                        <td className="px-3 py-2.5 text-xs text-right tabular-nums">{fmtBytes(w.documentsBytes)}</td>
+                        <td className="px-3 py-2.5 text-xs text-right font-semibold tabular-nums">{fmtBytes(w.totalBytes)}</td>
+                        <td className="px-3 py-2.5 w-32">
+                          <div className="flex items-center gap-2">
+                            <ProgressBar value={pct} accent={accent} />
+                            <span className="text-[10px] tabular-nums w-8 text-right">{Math.round(pct)}%</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-right tabular-nums">{w.assetCount || 0}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setEditing(w)
+                              setNewQuota(((w.quotaBytes || 0) / 1024 / 1024 / 1024).toFixed(1))
+                            }}
+                          >
+                            <Settings2 className="h-3 w-3 mr-1" />Quota
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-amber-500" /> Update Storage Quota
+            </DialogTitle>
+            <DialogDescription>
+              Set the storage limit for <code className="font-mono">{editing?.workspaceId}</code>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Used</p>
+                <p className="font-semibold tabular-nums">{editing ? fmtBytes(editing.totalBytes) : '—'}</p>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Current Quota</p>
+                <p className="font-semibold tabular-nums">{editing ? fmtBytes(editing.quotaBytes) : '—'}</p>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="text-[10px] text-muted-foreground">Usage</p>
+                <p className="font-semibold tabular-nums">{editing ? Math.round(editing.usagePercent) : 0}%</p>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">New Quota (GB)</Label>
+              <Input type="number" step="0.1" min="0" className="mt-1" value={newQuota} onChange={(e) => setNewQuota(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button disabled={saving} onClick={submitQuota}>
+              {saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Save className="h-4 w-4 mr-1.5" />}
+              Save Quota
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 8. Jobs — async AI job queue with status filter + view dialog
+ * ========================================================================== */
+
+function JobsPanel() {
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [page, setPage] = useState(1)
+  const [viewing, setViewing] = useState<JobRow | null>(null)
+  const query = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), pageSize: '20' })
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    return `/api/admin/jobs?${params.toString()}`
+  }, [page, statusFilter])
+  const { data, loading, refetch } = useApi<{ jobs: JobRow[]; total: number; totalPages: number; stats: JobStats }>(query, [page, statusFilter])
+
+  const cancelJob = async (j: JobRow) => {
+    const ok = await mutate(`/api/admin/jobs/${j.id}`, 'PATCH', { status: 'CANCELLED', errorMessage: 'Cancelled by admin' }, `Job ${j.id.slice(-6)} cancelled`)
+    if (ok.ok) refetch()
+  }
+
+  if (loading || !data) return <LoadingBlock />
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <StatCard icon={Clock} label="Queued" value={data.stats.queued} accent="sky" />
+        <StatCard icon={Loader2} label="Rendering" value={data.stats.rendering} accent="amber" />
+        <StatCard icon={Cpu} label="Processing" value={data.stats.processing} accent="amber" />
+        <StatCard icon={Check} label="Completed" value={data.stats.completed} accent="emerald" />
+        <StatCard icon={XCircle} label="Failed" value={data.stats.failed} accent="red" />
+      </div>
+
+      <Card>
+        <CardContent className="p-3 flex items-center gap-2 flex-wrap">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <span className="ml-auto text-xs text-muted-foreground">{data.total} total jobs</span>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          {data.jobs.length === 0 ? (
+            <EmptyState icon={ClipboardList} message="No jobs in this view." />
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto scroll-thin">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card border-b">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Prompt</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium w-32">Progress</th>
+                    <th className="px-3 py-2 font-medium">Provider</th>
+                    <th className="px-3 py-2 font-medium">Created</th>
+                    <th className="px-3 py-2 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.jobs.map((j, i) => (
+                    <motion.tr
+                      key={j.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(i * 0.01, 0.2) }}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="px-3 py-2.5">
+                        <Badge variant="secondary" className="text-[9px] bg-violet-500/10 text-violet-600">{j.type}</Badge>
+                      </td>
+                      <td className="px-3 py-2.5 max-w-xs">
+                        <p className="text-xs truncate">{j.prompt || '(no prompt)'}</p>
+                        <code className="text-[10px] text-muted-foreground">{j.id.slice(-8)}</code>
+                      </td>
+                      <td className="px-3 py-2.5"><StatusBadge status={j.status} /></td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <ProgressBar
+                            value={j.progress}
+                            accent={j.status === 'FAILED' ? 'red' : j.status === 'COMPLETED' ? 'emerald' : 'amber'}
+                          />
+                          <span className="text-[10px] tabular-nums w-8">{j.progress}%</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">{j.provider?.name || '—'}</td>
+                      <td className="px-3 py-2.5 text-[11px] text-muted-foreground">{timeAgo(j.createdAt)}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setViewing(j)}>
+                            <EyeIcon className="h-3 w-3 mr-1" />View
+                          </Button>
+                          {!['COMPLETED', 'FAILED', 'CANCELLED'].includes(j.status) && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={() => cancelJob(j)}>
+                              <XCircle className="h-3 w-3 mr-1" />Cancel
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {data.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {page} / {data.totalPages}</span>
+          <Button size="sm" variant="outline" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-amber-500" /> Job Detail
+            </DialogTitle>
+            <DialogDescription>
+              <code className="font-mono">{viewing?.id}</code>
+            </DialogDescription>
+          </DialogHeader>
+          {viewing && (
+            <div className="space-y-3 py-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Type</p>
+                  <p className="font-medium">{viewing.type}</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Status</p>
+                  <StatusBadge status={viewing.status} />
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Progress</p>
+                  <p className="font-medium tabular-nums">{viewing.progress}%</p>
+                </div>
+                <div className="rounded-md bg-muted/50 p-2">
+                  <p className="text-[10px] text-muted-foreground">Cost</p>
+                  <p className="font-medium tabular-nums">{fmtMoney(viewing.costUsd)} · {viewing.creditsUsed}cr</p>
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">Prompt</Label>
+                <Textarea className="mt-1 text-xs" rows={3} value={viewing.prompt} readOnly />
+              </div>
+              <div>
+                <Label className="text-xs">Params</Label>
+                <pre className="mt-1 text-[10px] font-mono bg-muted/50 p-2 rounded-md max-h-32 overflow-y-auto scroll-thin">
+                  {(() => { try { return JSON.stringify(JSON.parse(viewing.params), null, 2) } catch { return viewing.params } })()}
+                </pre>
+              </div>
+              {viewing.errorMessage && (
+                <div className="rounded-md bg-red-500/10 p-2">
+                  <p className="text-[10px] font-medium text-red-600">Error</p>
+                  <p className="text-xs text-red-700">{viewing.errorMessage}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div><span className="text-muted-foreground">Provider:</span> {viewing.provider?.name || '—'}</div>
+                <div><span className="text-muted-foreground">User:</span> {viewing.user?.name || viewing.user?.email || '—'}</div>
+                <div><span className="text-muted-foreground">External ID:</span> {viewing.externalId || '—'}</div>
+                <div><span className="text-muted-foreground">Created:</span> {new Date(viewing.createdAt).toLocaleString()}</div>
+                {viewing.startedAt && <div><span className="text-muted-foreground">Started:</span> {timeAgo(viewing.startedAt)}</div>}
+                {viewing.completedAt && <div><span className="text-muted-foreground">Completed:</span> {timeAgo(viewing.completedAt)}</div>}
+              </div>
+              {viewing.resultUrl && (
+                <div>
+                  <Label className="text-xs">Result URL</Label>
+                  <Input className="mt-1 text-xs font-mono" value={viewing.resultUrl} readOnly />
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewing(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 9. Monitoring — real-time metrics
+ * ========================================================================== */
+
+function MonitoringPanel() {
+  const { data, loading, refetch } = useApi<MonitoringData>('/api/admin/monitoring')
+  const [autoRefresh, setAutoRefresh] = useState(false)
+
+  useEffect(() => {
+    if (!autoRefresh) return
+    const id = setInterval(() => refetch(), 15000)
+    return () => clearInterval(id)
+  }, [autoRefresh, refetch])
+
+  if (loading || !data) return <LoadingBlock />
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardContent className="p-3 flex items-center justify-between">
+          <p className="text-xs text-muted-foreground flex items-center gap-2">
+            <CircleDot className="h-3.5 w-3.5 text-amber-500" />
+            Last refresh: {timeAgo(data.timestamp)}
+          </p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch checked={autoRefresh} onCheckedChange={setAutoRefresh} />
+              <span className="text-xs text-muted-foreground">Auto (15s)</span>
+            </label>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => refetch()}>
+              <RefreshCw className="h-3 w-3 mr-1" />Refresh
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={Server} label="Active Providers" value={`${data.providers.active}/${data.providers.total}`} accent="emerald" />
+        <StatCard icon={Zap} label="Today Requests" value={formatNumber(data.today.requests)} accent="amber" />
+        <StatCard icon={Check} label="Success Rate" value={`${data.today.successRate.toFixed(1)}%`} accent={data.today.successRate >= 95 ? 'emerald' : 'red'} />
+        <StatCard icon={Gauge} label="Avg Latency" value={`${Math.round(data.today.avgLatencyMs)}ms`} accent="sky" />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Server className="h-4 w-4 text-amber-500" /> Per-Provider Health
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="max-h-96 overflow-y-auto scroll-thin">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card border-b">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Provider</th>
+                    <th className="px-3 py-2 font-medium">Health</th>
+                    <th className="px-3 py-2 font-medium text-right">Req</th>
+                    <th className="px-3 py-2 font-medium text-right">Cost</th>
+                    <th className="px-3 py-2 font-medium text-right">Failures</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.perProviderHealth.map((p) => (
+                    <tr key={p.id} className="border-b last:border-0 hover:bg-muted/40">
+                      <td className="px-3 py-2.5">
+                        <p className="text-xs font-medium">{p.name}</p>
+                        <code className="text-[10px] text-muted-foreground">{p.slug}</code>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <HealthDot healthy={p.isHealthy} />
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-right tabular-nums">{p.todayRequests}</td>
+                      <td className="px-3 py-2.5 text-xs text-right tabular-nums">{p.todayCost > 0 ? fmtMoney(p.todayCost) : '—'}</td>
+                      <td className={cn('px-3 py-2.5 text-xs text-right tabular-nums', p.todayFailures > 0 ? 'text-red-600' : '')}>
+                        {p.todayFailures}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" /> Top Failing Tools
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {data.topFailingTools.length === 0 ? (
+                <EmptyState icon={Check} message="No failing tools in the last 24h. All good!" />
+              ) : (
+                <div className="space-y-2">
+                  {data.topFailingTools.map((t) => (
+                    <div key={t.toolSlug} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        <code className="text-xs font-mono">{t.toolSlug || 'unknown'}</code>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] bg-red-500/10 text-red-600">{t.count} fails</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', data.rateLimitedLastHour > 0 ? 'bg-amber-500/10 text-amber-600' : 'bg-emerald-500/10 text-emerald-600')}>
+                {data.rateLimitedLastHour > 0 ? <AlertTriangle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+              </div>
+              <div>
+                <p className="text-sm font-semibold tabular-nums">{data.rateLimitedLastHour}</p>
+                <p className="text-xs text-muted-foreground">Rate-limited requests (last hour)</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600">
+                <HardDrive className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold tabular-nums">{fmtBytes(data.storage.totalBytes)}</p>
+                <p className="text-xs text-muted-foreground">{data.storage.workspaceCount} workspaces tracked</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 10. Logs — paginated audit trail with filters
+ * ========================================================================== */
+
+function LogsPanel() {
+  const [page, setPage] = useState(1)
+  const [filters, setFilters] = useState({
+    providerId: 'all',
+    status: 'all',
+    toolSlug: '',
+    routeCategory: 'all',
+    requestType: 'all',
+    from: '',
+    to: '',
+  })
+
+  const query = useMemo(() => {
+    const p = new URLSearchParams({ page: String(page), pageSize: '25' })
+    if (filters.providerId !== 'all') p.set('providerId', filters.providerId)
+    if (filters.status !== 'all') p.set('status', filters.status)
+    if (filters.toolSlug.trim()) p.set('toolSlug', filters.toolSlug.trim())
+    if (filters.routeCategory !== 'all') p.set('routeCategory', filters.routeCategory)
+    if (filters.requestType !== 'all') p.set('requestType', filters.requestType)
+    if (filters.from) p.set('from', filters.from)
+    if (filters.to) p.set('to', filters.to)
+    return `/api/admin/logs?${p.toString()}`
+  }, [page, filters])
+
+  const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const { data, loading } = useApi<{ logs: LogRow[]; total: number; totalPages: number }>(query, [page, filters])
+
+  const update = (k: keyof typeof filters, v: string) => {
+    setFilters((f) => ({ ...f, [k]: v }))
+    setPage(1)
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+          <Select value={filters.providerId} onValueChange={(v) => update('providerId', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Provider" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Providers</SelectItem>
+              {provData?.providers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filters.status} onValueChange={(v) => update('status', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {LOG_STATUSES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Input
+            className="h-8 text-xs"
+            placeholder="Tool slug"
+            value={filters.toolSlug}
+            onChange={(e) => update('toolSlug', e.target.value)}
+          />
+          <Select value={filters.routeCategory} onValueChange={(v) => update('routeCategory', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Category" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Categories</SelectItem>
+              {ROUTE_CATEGORIES.map((c) => <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filters.requestType} onValueChange={(v) => update('requestType', v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Type" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              {REQUEST_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Input type="date" className="h-8 text-xs" value={filters.from} onChange={(e) => update('from', e.target.value)} />
+          <Input type="date" className="h-8 text-xs" value={filters.to} onChange={(e) => update('to', e.target.value)} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-4 space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 rounded-md" />)}</div>
+          ) : !data || data.logs.length === 0 ? (
+            <EmptyState icon={FileText} message="No logs match these filters." />
+          ) : (
+            <div className="max-h-[600px] overflow-y-auto scroll-thin">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-card border-b">
+                  <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">Time</th>
+                    <th className="px-3 py-2 font-medium">Provider</th>
+                    <th className="px-3 py-2 font-medium">Tool</th>
+                    <th className="px-3 py-2 font-medium">Type</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium text-right">Duration</th>
+                    <th className="px-3 py-2 font-medium text-right">Tokens</th>
+                    <th className="px-3 py-2 font-medium text-right">Cost</th>
+                    <th className="px-3 py-2 font-medium">User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.logs.map((log, i) => (
+                    <motion.tr
+                      key={log.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: Math.min(i * 0.005, 0.2) }}
+                      className="border-b last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="px-3 py-2.5 text-[11px] text-muted-foreground whitespace-nowrap">
+                        {new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs">{log.provider?.name || '—'}</td>
+                      <td className="px-3 py-2.5"><code className="text-[11px] font-mono">{log.toolSlug || '—'}</code></td>
+                      <td className="px-3 py-2.5">
+                        <Badge variant="secondary" className="text-[9px] bg-muted">{log.requestType}</Badge>
+                      </td>
+                      <td className="px-3 py-2.5"><StatusBadge status={log.status} /></td>
+                      <td className="px-3 py-2.5 text-xs text-right tabular-nums font-mono">{log.durationMs}ms</td>
+                      <td className="px-3 py-2.5 text-xs text-right tabular-nums">
+                        {(log.inputTokens + log.outputTokens).toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-right tabular-nums">
+                        {log.costUsd > 0 ? fmtMoney(log.costUsd) : '—'}
+                      </td>
+                      <td className="px-3 py-2.5 text-[11px] text-muted-foreground truncate max-w-[120px]">
+                        {log.user?.name || log.user?.email || '—'}
+                      </td>
+                    </motion.tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {data && data.totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {page} / {data.totalPages} · {data.total} logs</span>
+          <Button size="sm" variant="outline" disabled={page >= data.totalPages} onClick={() => setPage((p) => p + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 11. Costs — today/month, 30-day chart, per-provider breakdown, alerts
+ * ========================================================================== */
+
+function CostsPanel() {
+  const { data, loading, refetch } = useApi<CostData>('/api/admin/costs')
+  if (loading || !data) return <LoadingBlock />
+
+  const maxDaily = Math.max(...data.dailySeries.map((d) => d.totalCostUsd), 1)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card>
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600">
+              <DollarSign className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{fmtMoney(data.today.totalCostUsd)}</p>
+              <p className="text-xs text-muted-foreground">Today's Cost · {formatNumber(data.today.requests)} req · {data.today.failures} failures</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600">
+              <TrendingUp className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold tabular-nums">{fmtMoney(data.thisMonth.totalCostUsd)}</p>
+              <p className="text-xs text-muted-foreground">This Month · {formatNumber(data.thisMonth.requests)} req · {data.thisMonth.failures} failures</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-amber-500" /> Daily Cost (Last 30 Days)
+            <Button size="sm" variant="ghost" className="h-7 ml-auto text-xs" onClick={() => refetch()}>
+              <RefreshCw className="h-3 w-3 mr-1" />Refresh
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {data.dailySeries.length === 0 ? (
+            <EmptyState icon={BarChart3} message="No cost data yet for the last 30 days." />
+          ) : (
+            <div className="flex items-end gap-1 h-40 overflow-x-auto scroll-thin pb-1">
+              {data.dailySeries.map((d) => {
+                const h = Math.max(4, (d.totalCostUsd / maxDaily) * 100)
+                return (
+                  <div key={d.day} className="flex flex-col items-center gap-1 shrink-0" title={`${d.day}: ${fmtMoney(d.totalCostUsd)}`}>
+                    <div
+                      className="w-3 bg-gradient-to-t from-amber-500 to-amber-400 rounded-t-sm"
+                      style={{ height: `${h}%` }}
+                    />
+                    <span className="text-[8px] text-muted-foreground -rotate-45 origin-top whitespace-nowrap">
+                      {d.day.slice(5)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Server className="h-4 w-4 text-amber-500" /> Per-Provider Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {data.perProviderBreakdown.length === 0 ? (
+              <EmptyState icon={Server} message="No per-provider cost data today." />
+            ) : (
+              <div className="max-h-80 overflow-y-auto scroll-thin">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-card border-b">
+                    <tr className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <th className="px-3 py-2 font-medium">Provider</th>
+                      <th className="px-3 py-2 font-medium text-right">Cost</th>
+                      <th className="px-3 py-2 font-medium text-right">Req</th>
+                      <th className="px-3 py-2 font-medium text-right">Fail</th>
+                      <th className="px-3 py-2 font-medium w-32">Budget</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.perProviderBreakdown.map((p) => {
+                      const pct = p.dailyBudget > 0 ? (p.todayCost / p.dailyBudget) * 100 : 0
+                      const accent = pct >= 100 ? 'red' : pct >= 80 ? 'amber' : 'emerald'
+                      return (
+                        <tr key={p.providerId} className="border-b last:border-0 hover:bg-muted/40">
+                          <td className="px-3 py-2.5">
+                            <p className="text-xs font-medium">{p.name}</p>
+                            <code className="text-[10px] text-muted-foreground">{p.slug}</code>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-right font-semibold tabular-nums">{fmtMoney(p.todayCost)}</td>
+                          <td className="px-3 py-2.5 text-xs text-right tabular-nums">{p.todayRequests}</td>
+                          <td className={cn('px-3 py-2.5 text-xs text-right tabular-nums', p.todayFailures > 0 ? 'text-red-600' : '')}>
+                            {p.todayFailures}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {p.dailyBudget > 0 ? (
+                              <div className="flex items-center gap-2">
+                                <ProgressBar value={pct} accent={accent} />
+                                <span className="text-[10px] tabular-nums w-10 text-right">{Math.round(pct)}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground">no budget</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-amber-500" /> Budget Alerts
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {data.budgetAlerts.length === 0 ? (
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10">
+                <Check className="h-5 w-5 text-emerald-600" />
+                <p className="text-xs text-emerald-700">All providers within budget. No alerts.</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto scroll-thin">
+                {data.budgetAlerts.map((a) => (
+                  <div
+                    key={a.providerId}
+                    className={cn(
+                      'rounded-lg p-2.5 border',
+                      a.level === 'critical' ? 'bg-red-500/10 border-red-500/20' : 'bg-amber-500/10 border-amber-500/20',
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold">{a.name}</p>
+                      <Badge variant="secondary" className={cn('text-[9px]', a.level === 'critical' ? 'bg-red-500/15 text-red-600' : 'bg-amber-500/15 text-amber-600')}>
+                        {a.level}
+                      </Badge>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">{a.message}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Spent {fmtMoney(a.todayCost)} of {fmtMoney(a.dailyBudget)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 12. Security — keys, rate limits, empty-key providers, isolation
+ * ========================================================================== */
+
+function SecurityPanel() {
+  const { data, loading, refetch } = useApi<SecurityData>('/api/admin/security')
+  const [rateForm, setRateForm] = useState({ minute: 60, hour: 600 })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRateForm({
+        minute: data.rateLimit.defaultMaxPerMinute,
+        hour: data.rateLimit.defaultMaxPerHour,
+      })
+    }
+  }, [data])
+
+  if (loading || !data) return <LoadingBlock />
+
+  const saveRateLimits = async () => {
+    setSaving(true)
+    const ok = await mutate('/api/admin/security', 'PATCH', {
+      defaultRateLimitPerMinute: rateForm.minute,
+      defaultRateLimitPerHour: rateForm.hour,
+    }, 'Rate limits updated')
+    setSaving(false)
+    if (ok.ok) refetch()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={KeyRound} label="Total Keys" value={data.apiKeys.total} accent="amber" />
+        <StatCard icon={KeySquare} label="Active Keys" value={data.apiKeys.active} accent="emerald" />
+        <StatCard icon={AlertCircle} label="Empty Keys" value={data.providersWithEmptyKey.length} accent={data.providersWithEmptyKey.length > 0 ? 'red' : 'emerald'} />
+        <StatCard icon={ShieldAlert} label="Failed Auth (24h)" value={data.failedAuthAttempts24h} accent={data.failedAuthAttempts24h > 0 ? 'red' : 'emerald'} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Gauge className="h-4 w-4 text-amber-500" /> Rate Limit Configuration
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Default Max / Minute</Label>
+                <Input type="number" min="1" className="mt-1" value={rateForm.minute} onChange={(e) => setRateForm({ ...rateForm, minute: Number(e.target.value) })} />
+              </div>
+              <div>
+                <Label className="text-xs">Default Max / Hour</Label>
+                <Input type="number" min="1" className="mt-1" value={rateForm.hour} onChange={(e) => setRateForm({ ...rateForm, hour: Number(e.target.value) })} />
+              </div>
+            </div>
+            <Button size="sm" disabled={saving} onClick={saveRateLimits}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+              Save Rate Limits
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Lock className="h-4 w-4 text-amber-500" /> Workspace Isolation
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-muted-foreground">Workspace-scoped generations</span>
+                <span className="text-xs font-semibold tabular-nums">{data.workspaceIsolation.isolationPercent.toFixed(1)}%</span>
+              </div>
+              <ProgressBar value={data.workspaceIsolation.isolationPercent} accent={data.workspaceIsolation.isolationPercent >= 90 ? 'emerald' : 'amber'} />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {formatNumber(data.workspaceIsolation.isolatedCount)} of {formatNumber(data.workspaceIsolation.totalGenerations)} generations are workspace-scoped.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-500" /> Providers with Empty API Keys
+            <Badge variant="secondary" className={cn('text-[10px] ml-2', data.providersWithEmptyKey.length > 0 ? 'bg-red-500/10 text-red-600' : 'bg-emerald-500/10 text-emerald-600')}>
+              {data.providersWithEmptyKey.length} at risk
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {data.providersWithEmptyKey.length === 0 ? (
+            <div className="flex items-center gap-3 p-4">
+              <Check className="h-5 w-5 text-emerald-600" />
+              <p className="text-sm text-emerald-700">All providers have API keys configured. No security risks detected.</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {data.providersWithEmptyKey.map((p) => (
+                <div key={p.id} className="flex items-center gap-3 p-3">
+                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{p.name}</p>
+                    <code className="text-[10px] text-muted-foreground">{p.slug}</code>
+                  </div>
+                  <CapBadges capabilities={p.capabilities} />
+                  <Badge variant="secondary" className={cn('text-[10px]', p.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>
+                    {p.isActive ? 'Active' : 'Disabled'}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Clock className="h-4 w-4 text-amber-500" /> Audit Log Retention
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="rounded-md bg-muted/50 p-2">
+            <p className="text-[10px] text-muted-foreground">Retention Days</p>
+            <p className="font-semibold tabular-nums">{data.auditRetention.auditLogRetentionDays}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-2">
+            <p className="text-[10px] text-muted-foreground">Key Rotation Days</p>
+            <p className="font-semibold tabular-nums">{data.auditRetention.requireApiKeyRotationDays}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-2">
+            <p className="text-[10px] text-muted-foreground">Keys Rotated (30d)</p>
+            <p className="font-semibold tabular-nums">{data.apiKeys.rotatedInLast30Days}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-2">
+            <p className="text-[10px] text-muted-foreground">Oldest Log</p>
+            <p className="font-semibold">{data.auditRetention.oldestLogAt ? timeAgo(data.auditRetention.oldestLogAt) : '—'}</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+/* ============================================================================
+ * 13. Feature Flags — toggle list
+ * ========================================================================== */
+
+function FlagsPanel() {
+  const { data, loading, refetch } = useApi<{ flags: Flag[] }>('/api/admin/flags')
+
+  if (loading || !data) return <LoadingBlock />
+
+  return (
+    <div className="space-y-2">
+      {data.flags.length === 0 ? (
+        <Card><CardContent className="p-0"><EmptyState icon={ToggleLeft} message="No feature flags configured." /></CardContent></Card>
+      ) : (
+        data.flags.map((f, i) => (
+          <motion.div key={f.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}>
+            <Card>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', f.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted text-muted-foreground')}>
+                    <ToggleLeft className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{f.name}</p>
+                      <code className="text-[10px] text-muted-foreground">{f.key}</code>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{f.description}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className={cn('text-[10px]', f.enabled ? 'bg-emerald-500/10 text-emerald-600' : 'bg-muted')}>
+                    {f.enabled ? 'Enabled' : 'Disabled'}
+                  </Badge>
+                  <Switch
+                    checked={f.enabled}
+                    onCheckedChange={async (v) => {
+                      const ok = await mutate('/api/admin/flags', 'PUT', { id: f.id, enabled: v }, `${f.name} ${v ? 'enabled' : 'disabled'}`)
+                      if (ok.ok) refetch()
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))
+      )}
     </div>
   )
 }

@@ -1,0 +1,302 @@
+   700→  * safeJsonParse used on AuditLog.metadata column ✅
+   701→  * Did NOT modify schema, community.ts, or write any frontend code ✅
+   702→  * No `bun run build` ✅
+   703→
+   704→- Initial TypeScript errors caught by `npx tsc --noEmit`:
+   705→  * Three files (`reports/route.ts`, `reports/[reportId]/route.ts`, `queue/route.ts`) used `include: { reporter: {...} }` on ModerationReport — but the Prisma schema has no `reporter User @relation(...)` field, so TypeScript inferred the include payload as `never`. Fixed by removing `include`, fetching reporter + resolver users via separate batched `db.user.findMany({ where: { id: { in: ids } } })` calls, and constructing `reporterMap` / `resolverMap` for shape assembly. Used `Promise.all([findMany, findMany])` (rather than `cond ? findMany : []`) to keep clean `User[]` typing since Prisma returns `[]` for `in: []` queries natively.
+   706→- Ran `cd /home/z/my-project && bun run lint 2>&1 | tail -20` — exit code 0, `$ eslint .` with zero errors and zero warnings across all 10 new files.
+   707→- Ran `npx tsc --noEmit` and confirmed zero TypeScript errors in src/app/api/community/(moderation|notifications)/** (only pre-existing errors remain in examples/, prisma/seed-ai-platform.ts, and skills/ — out of scope).
+   708→
+   709→Stage Summary:
+   710→- 10 new API route files created under src/app/api/community/ (moderation/reports/, moderation/reports/[reportId]/, moderation/queue/, moderation/keywords/, moderation/check/, moderation/audit-log/, moderation/warnings/, notifications/, notifications/[notificationId]/, notifications/unread-count/)
+   711→- All lint-clean (eslint exit 0) and tsc-clean on the new files
+   712→- Full audit-log coverage: REPORT_CREATE, REPORT_RESOLVE, REPORT_DISMISS, KEYWORD_ADD, KEYWORD_REMOVE
+   713→- Notification fan-out: SYSTEM on report resolution/dismissal to the reporter (with reason + resolution/dismissal context)
+   714→- Moderation queue stats: pending, reviewing, resolvedToday, dismissedToday (today = local-midnight boundary) + top 20 pending items
+   715→- Banned-keyword check engine: BLOCK (allowed=false), REVIEW (flagged=true), REPLACE (apply replacement with `*` wildcard + regex-escaped literal segments, default `***`); multiple matches accumulate
+   716→- Audit log access restricted to OWNER/ADMIN (canManageMembers); moderation endpoints restricted to OWNER/ADMIN/MODERATOR (canModerate); notifications fully user-scoped (must own by ctx.user.id + ctx.workspaceId)
+   717→- ModerationReport model has no Prisma relation fields — reporter + resolver user objects assembled via separate batched `db.user.findMany` lookups (parallel via Promise.all + Map)
+   718→- Duplicate-report guard: same reporterId+targetType+targetId+status(PENDING|REVIEWING) → 409
+   719→- Duplicate-keyword guard: same workspaceId+keyword → 409
+   720→- Target-preview fetcher handles POST / COMMENT / EVENT / USER (USER accepts either memberId or userId, since the report's targetId is a free-form string)
+   721→- All routes workspace-isolated; every query filters by ctx.workspaceId (notifications and warnings additionally scope by ctx.user.id or memberId)
+   722→
+   723→---
+   724→Task ID: COMMUNITY-REBUILD
+   725→Agent: Main (Z.ai Code)
+   726→Task: Rebuild complete Community module after rollback — schema, backend APIs, frontend, browser verification
+   727→
+   728→Work Log:
+   729→- Diagnosed issue: entire previous session's work was rolled back (schema, backend, frontend all missing)
+   730→- Extended Prisma schema with 10 new models: CommunitySpace, CommunityEvent, EventRSVP, Invitation, Notification, ModerationReport, BannedKeyword, AuditLog, MemberWarning, PostHistory + extended WorkspaceMember (memberStatus, mutedUntil, suspendedUntil, bannedUntil, lastSeenAt, joinedAt, postsCount, commentsCount, likesReceived, badges) and CommunityPost (postType, isLocked, isArchived, isEdited, editCount, hashtags, mentions, pollOptions, attachments, reactions)
+   731→- Pushed schema to DB successfully
+   732→- Created src/lib/community.ts with: getContext() (workspace resolver), permission checks (canManageMembers, canModerate, canActOnMember with role hierarchy), writeAuditLog, sendNotification, sanitizeString, isValidEmail, generateToken, slugify, paginate, safeJsonParse
+   733→- Dispatched 4 parallel backend subagents (Tasks 3a-3d) that built 32 API routes:
+   734→  * Spaces + Events + RSVP (3a): 4 route files
+   735→  * Posts + Comments + Reactions + Pin/Lock/Archive + Report (3b): 10 route files
+   736→  * Members + Invitations + Transfer Ownership + Warn + Export CSV (3c): 8 route files
+   737→  * Moderation + Notifications + Audit Log + Banned Keywords (3d): 10 route files
+   738→- Updated /api/data/community to be workspace-scoped with spaces + events + stats
+   739→- Rebuilt community.tsx (1970 lines) as a comprehensive single-file module with all views:
+   740→  * Feed: post cards, reactions (6 types), comments, pin/lock/archive, report, share, save, hashtags
+   741→  * Spaces: grid view, create dialog with visibility options, auto-navigate to new space, space detail with Feed/About/Members tabs
+   742→  * Members: table with search/role/status filters, stat cards, role change submenu, mute/suspend/ban/reactivate/remove actions, Export CSV, Invite People button
+   743→  * Events: card view with date badges, RSVP (Going/Maybe/Can't go), create dialog with type/location/meeting URL
+   744→  * Leaderboard: ranked entries with weekly/monthly/all-time tabs
+   745→  * Moderation: 3 tabs (Queue with resolve/dismiss, Keywords with add/delete + content checker, Audit Log with actor/action/target)
+   746→  * About: community stats + guidelines
+   747→  * Invite Dialog: 4 tabs (Email, Link, QR Code, Bulk CSV) + pending invitations list with resend/revoke
+   748→  * Notifications: slide-over panel with mark-all-read, mark read/unread, delete, 30s polling for unread count
+   749→- Fixed 2 critical bugs found during browser testing:
+   750→  1. Icon import error: `Mute` doesn't exist in lucide-react → replaced with `VolumeX` (caused HTTP 500)
+   751→  2. Members filter bug: frontend sent `role=all`/`status=all` which backend treated as literal filter values → converted "all" to empty string before sending to API
+   752→
+   753→Browser-Verified (Agent Browser end-to-end):
+   754→- ✅ Page loads HTTP 200, no console errors
+   755→- ✅ Feed renders with real posts, reaction buttons, comment composer
+   756→- ✅ Created "Marketing Mastery" space → auto-navigated to space detail with Feed/About/Members tabs
+   757→- ✅ Members view shows all 5 members (Alex Rivera/OWNER, Jamie Chen/ADMIN, Priya Patel, Marcus Lee, Sofia Diaz) with roles, statuses, emails, activity stats
+   758→- ✅ Invite People dialog: all 4 tabs work (Email/Link/QR/CSV). Sent invitation to test@example.com → appeared in "Pending Invitations (2)" list with PENDING status + resend/revoke actions
+   759→- ✅ Moderation view: Queue/Keywords/Audit Log tabs all render. Audit Log shows MEMBER_INVITE + SPACE_CREATE entries from actions performed during testing
+   760→- ✅ Events view: Created "Weekly Q&A Session" event → appeared with RSVP buttons (Going/Maybe/Can't go)
+   761→- ✅ Created "Test post from browser" → appeared at top of feed with #testing hashtag
+   762→- ✅ Right sidebar shows community stats (Members, Posts, Spaces, Events, Online now, This week) + Community Guidelines card
+   763→- ✅ Notifications panel accessible via bell icon in right sidebar
+   764→
+   765→Stage Summary:
+   766→- Lint: 0 errors
+   767→- Dev server: HTTP 200
+   768→- 32 backend API routes across 8 route directories
+   769→- 10 new Prisma models + extended WorkspaceMember/CommunityPost
+   770→- 1970-line frontend with 7 views + invite dialog + notifications panel
+   771→- All features browser-verified end-to-end
+   772→- Spaces creation auto-navigates to new space (key requirement)
+   773→- Invite People fully functional with 4 methods
+   774→- Members page production-ready with all management actions
+   775→- Audit logs generated for all administrative actions
+   776→
+   777→---
+   778→Task ID: PLATFORM-RESTRUCTURE
+   779→Agent: Main (Z.ai Code) — CreatorOS Platform Restructure
+   780→Task: Transform CreatorOS from page-builder focus to AI-powered Creator Business Platform (LearnHouse + Kajabi + Circle + Gumroad + Skool model)
+   781→
+   782→Work Log:
+   783→- Read entire project: nav.ts, sidebar.tsx, page.tsx, pages-funnels.tsx, community.ts, all 60 API routes, schema.prisma (41 models)
+   784→- Produced 6 architecture documents:
+   785→  * WEBSITE_ARCHITECTURE.md (~390 lines) — new architecture vision, 10 pillars, AI generation flow
+   786→  * PUBLIC_FRONTEND_PLAN.md (~520 lines) — LearnHouse/Kajabi-inspired frontend, route map, component tree
+   787→  * WEBSITE_DATABASE_FLOW.md (~560 lines) — DB→API→Public Page flow, auto-generation for courses/products/community/blog
+   788→  * WEBSITE_NAVIGATION.md (~540 lines) — new sidebar structure, tab mappings, keyboard shortcuts
+   789→  * WEBSITE_SEO_PLAN.md (~590 lines) — auto SEO per page type, JSON-LD schemas, sitemap, robots.txt
+   790→  * WEBSITE_MIGRATION_PLAN.md (~560 lines) — 6-stage non-destructive migration, risk matrix, rollback strategy
+   791→- Restructured sidebar navigation (src/lib/nav.ts):
+   792→  * Overview: Dashboard, AI Studio, Analytics
+   793→  * Create & Sell: Courses, Digital Products, Store
+   794→  * Community: Community
+   795→  * Customers: CRM, Email Marketing, Memberships, Affiliates
+   796→  * Website: Website (renamed from "Pages & Funnels")
+   797→  * System: Media Library, Automation, Certificates, Support, Settings, Super Admin
+   798→- Added new 'automation' module ID to ModuleId type
+   799→- Created src/components/modules/automation.tsx — Automation module with FunnelsPanel (moved from pages-funnels.tsx)
+   800→- Updated src/app/page.tsx to import and register AutomationModule
+   801→- Transformed Pages & Funnels module into Website module (src/components/modules/pages-funnels.tsx):
+   802→  * Renamed header to "Website" with new description
+   803→  * Added "Home" tab (default) with auto-generated pages overview — shows /courses, /store, /community, /blog, /membership, /about, /contact, /pricing
+   804→  * Removed "Funnels" tab (moved to Automation module)
+   805→  * Renamed "Site Settings" tab to "Branding"
+   806→  * Updated "AI Landing Page" button to "AI Generate Page"
+   807→  * Added HomePanel component with:
+   808→    - Auto-generated pages grid (9 pages with icons, slugs, status)
+   809→    - "How it works" card (4 steps: Create content → AI generates → Edit with forms → Publish)
+   810→    - "View Site" button
+   811→  * Removed dead FunnelsPanel function (moved to automation.tsx)
+   812→  * Added missing icon imports (GraduationCap, Package, CreditCard)
+   813→- Updated keyboard shortcuts: "G F" (Pages & Funnels) → "G W" (Website)
+   814→
+   815→Browser-Verified:
+   816→- ✅ New sidebar renders with 6 groups: Overview, Create & Sell, Community, Customers, Website, System
+   817→- ✅ Website module loads with "Home" tab showing auto-generated pages overview
+   818→- ✅ Website tabs: Home, Pages, Landing Pages, Navigation, Blog, Branding, SEO, Domains (no Funnels)
+   819→- ✅ Automation module loads with funnels stats and "New Funnel" button
+   820→- ✅ Dashboard loads with "Welcome back, Alex" and revenue metrics
+   821→- ✅ Courses module loads with course list
+   822→- ✅ CRM module loads with Customers/Orders tabs
+   823→- ✅ Email Marketing loads with "New Campaign" button
+   824→- ✅ Settings loads with Workspace/Team tabs
+   825→- ✅ Community loads with Feed/Spaces/Members/Events tabs
+   826→- ✅ Zero console errors
+   827→- ✅ Zero runtime errors
+   828→
+   829→Stage Summary:
+   830→- Lint: 0 errors
+   831→- TypeScript: 0 errors
+   832→- Dev server: HTTP 200
+   833→- 6 architecture documents produced (total ~3,160 lines)
+   834→- Sidebar restructured to business-first layout
+   835→- Website module replaces Pages & Funnels (page builder de-emphasized)
+   836→- Automation module created (Funnels moved here)
+   837→- No broken navigation — all 18 modules accessible and functional
+   838→- No dead code — removed unused FunnelsPanel from pages-funnels.tsx
+   839→- No data loss — no schema changes, no DB changes
+   840→- Backward compatible — all existing module IDs preserved, APIs unchanged
+   841→
+   842→---
+   843→Task ID: AI-04-1
+   844→Agent: Main (Z.ai Code)
+   845→Task: PHASE AI-04 — Extend Prisma schema with enterprise AI tables + build AI Engine library + seed infrastructure
+   846→
+   847→Work Log:
+   848→- Extended AiProvider with capabilities, webhookSecret, isHealthy, daily/monthlyBudget, daily/monthlyRequests, timeout, retries, concurrency, fallbackProviderId, description, docsUrl, lastHealthCheck + relations to AiProviderKey, AiRoute, AiJob, AiLog, AiCost, AiWebhook
+   849→- Extended AiModel with modality (TEXT|IMAGE|VIDEO|AUDIO|EMBEDDING|STT|TTS), inputCostPer1k, outputCostPer1k (admin-only cost tracking)
+   850→- Extended AiTool with routeCategory (WRITING|MARKETING|COURSE|WEBSITE|SEO|EMAIL|BLOG|CRM|AUTOMATION|IMAGE|VIDEO|VOICE|STT|EMBEDDING) — every tool maps to a route so Super Admin can swap providers without code changes
+   851→- Extended AiGeneration with workspaceId, routeCategory, providerSlug, modelId, jobId, assetId, errorMessage, costUsd, durationMs, inputTokens, outputTokens, metadata, completedAt — full audit trail
+   852→- Added 13 new enterprise tables:
+   853→  * AiProviderKey — multi-key rotation per provider (with maskedValue, lastUsedAt, lastRotatedAt, rotatedFrom)
+   854→  * AiRoute — maps toolCategory → providerId + fallbackProviderId + modelId + strategy (smart/cost/quality/round_robin)
+   855→  * AiJob — async queue for IMAGE_GEN/VIDEO_GEN/UPSCALE/BG_REMOVE/VARIATIONS (status, progress, externalId, resultUrl)
+   856→  * AiAsset — every generated output saved to Media Library (type, folder, url, prompt, style, aspectRatio, tags, isFavorite, usedIn)
+   857→  * AiBrandProfile — creator brand voice (no provider/model info exposed)
+   858→  * AiProject — group assets by project
+   859→  * AiUsage — per workspace/user/tool/day aggregation for analytics + cost control
+   860→  * AiLog — every AI request audit trail (admin-only)
+   861→  * AiCost — per provider/day cost aggregation + budgetExceeded + autoDisabled
+   862→  * AiStorage — per workspace byte usage (BigInt for >2GB) + quota
+   863→  * AiWebhook — incoming webhook log for async providers
+   864→  * AiRateLimit — sliding minute/hour window per workspace/user/category
+   865→- Pushed schema to DB (db:push successful, generated Prisma Client v6.19.2)
+   866→- Built src/lib/ai-engine/ library with:
+   867→  * types.ts — RouteCategory, ProviderSlug, JobType, params/results interfaces, ASPECT_RATIOS map, IMAGE_STYLES, VIDEO_PRESETS, TOOL_ROUTE_MAP, DEFAULT_COST_USD, maskApiKey()
+   868→  * router.ts — resolveRoute(category) with 30s cache, capability-based fallback, invalidateRouteCache()
+   869→  * providers.ts — ProviderAdapter interface + ZaiAdapter (concrete, uses z-ai-web-dev-sdk) + stub adapters for OpenRouter/Fal AI/ElevenLabs/Deepgram/OpenAI + withFallback() that retries on secondary adapter
+   870→  * cost.ts — checkCredits(), deductCredits(), trackUsage() (upsert per day), trackCost() (auto-disable provider on budget exceed), writeLog() (admin audit), checkRateLimit() (sliding minute window), estimateCost()
+   871→  * engine.ts — generateText(), generateImage() (auto-saves AiAsset to Media Library), generateVideo() (creates AiJob in QUEUED + simulates async progress via setTimeout for sandbox)
+   872→  * index.ts — public barrel
+   873→- Created prisma/seed-enterprise-ai.ts — idempotent seed script
+   874→- Seeded 12 providers (OpenRouter, Fal AI, OpenAI, ElevenLabs, Deepgram, Anthropic, Gemini, DeepSeek, GLM, Replicate, Together AI, RunPod), 19 models, 14 routes, IMAGE_GEN + VIDEO_GEN tools, default brand profile + storage quota
+   875→- Updated existing AiTool records with routeCategory (COURSE_GENERATOR→COURSE, EMAIL_WRITER→EMAIL, etc.)
+   876→
+   877→Stage Summary:
+   878→- Schema: 13 new tables + 3 extended (AiProvider, AiModel, AiTool, AiGeneration) — 0 TypeScript errors
+   879→- AI Engine: complete routing + provider adapter layer + cost/credit/usage/log/rate-limit tracking
+   880→- All text generation routed via OpenRouter (with GLM fallback) → both stub to z.ai adapter in sandbox
+   881→- All image generation routed via Fal AI (with GLM fallback) → both stub to z.ai adapter in sandbox
+   882→- Image generation auto-saves to AiAsset (folder="AI Images") + links assetId back to AiGeneration
+   883→- Video generation creates AiJob in QUEUED + simulates progress via setTimeout (RENDERING→PROCESSING→COMPLETED with 100% progress, ~11s total)
+   884→- Provider auto-disable on daily budget exceed implemented
+   885→- Rate limiting: 60 requests/min per workspace/user/category (configurable)
+   886→- Audit logging: every AI request writes to AiLog with providerSlug, modelId, durationMs, tokens, costUsd
+   887→- Ready for backend API + frontend subagents
+   888→
+   889→---
+   890→Task ID: 3a
+   891→Agent: Backend Agent (Admin APIs)
+   892→Task: Build Super Admin AI infrastructure API routes
+   893→
+   894→Work Log:
+   895→- Read worklog.md + schema (lines 11-1018) + ai-engine/index.ts + ai-engine/engine.ts + ai-engine/router.ts + ai-engine/providers.ts + existing admin routes (providers/tools/flags/settings/generations) to understand established patterns
+   896→- Extended `src/app/api/admin/providers/route.ts` (MODIFIED):
+   897→  * GET — returns providers with masked apiKey, models array, modelsCount, keysCount, activeKeysCount + today's aggregated stats (todayCost/todayRequests/todayFailures via AiCost.groupBy on day=startOfToday)
+   898→  * PUT — extended allowed fields to include webhookSecret, isHealthy, capabilities, daily/monthlyBudget, daily/monthlyRequests, timeout, retries, concurrency, fallbackProviderId, description, docsUrl; coerces numeric Int vs Float fields; syncs active AiProviderKey when apiKey changes; calls invalidateRouteCache() after update
+   899→- Created `src/app/api/admin/providers/[id]/route.ts` (NEW):
+   900→  * GET — single provider with models + masked keys + routes + fallbackRoutes + today's cost aggregation + last 10 AiLogs (parallel Promise.all)
+   901→  * PATCH — path-param version of PUT
+   902→  * DELETE — soft delete (set isActive=false); refuses with 400 if provider is the last active one for any capability it serves (loops through comma-split capabilities, counts other active providers with same capability)
+   903→- Created `src/app/api/admin/providers/[id]/test/route.ts` (NEW):
+   904→  * POST — real test for slug='glm' (calls ZAI.create() + zai.chat.completions.create with thinking:disabled, returns latencyMs); for other providers, just checks apiKey non-empty
+   905→  * Updates isHealthy + lastHealthCheck on provider record; on error returns 200 with success=false (doesn't throw — admin UI surfaces error)
+   906→- Created `src/app/api/admin/providers/[id]/rotate-key/route.ts` (NEW):
+   907→  * POST — validates newKey (min 8 chars); marks existing active keys inactive (lastRotatedAt=now); creates audit row with rotatedFrom=oldMasked if no AiProviderKey existed; updates provider.apiKey; creates new active AiProviderKey record; calls invalidateRouteCache(); returns maskedApiKey + rotatedAt
+   908→- Created `src/app/api/admin/models/route.ts` (NEW):
+   909→  * GET — list with provider info; supports ?providerId= and ?modality= filters
+   910→  * POST — create model; validates providerId/name/displayName/modality (modality must be one of ALLOWED_MODALITIES); if isDefault=true unsets other defaults on same provider
+   911→  * PUT — update model; same validations; if isDefault=true unsets other defaults; calls invalidateRouteCache()
+   912→- Created `src/app/api/admin/routing/route.ts` (NEW):
+   913→  * GET — list routes with provider + fallbackProvider; batch-fetches models for modelId overrides
+   914→  * PUT — update route; validates strategy; coerces weight to Number; calls invalidateRouteCache()
+   915→  * POST — create route; validates toolCategory (must be in ALLOWED_CATEGORIES list of 14) and strategy; enforces uniqueness on toolCategory; checks provider + fallback provider existence; calls invalidateRouteCache()
+   916→- Created `src/app/api/admin/credits/route.ts` (NEW):
+   917→  * GET — global credit summary: totalIssued (sum of positive CreditTransaction.amount), totalSpent (abs sum of negative), inCirculation (sum of User.credits), avgCreditsPerUser, recent 20 transactions with user info
+   918→- Created `src/app/api/admin/storage/route.ts` (NEW):
+   919→  * GET — per-workspace AiStorage records with all BigInt bytes converted to Number via toNum(b) helper (uses Number(b.toString()) for safety); usagePercent calculated; totals aggregated across workspaces
+   920→  * PATCH — update quota for a workspace; accepts quotaBytes as number or string; converts to BigInt; upserts by workspaceId (unique)
+   921→- Created `src/app/api/admin/jobs/route.ts` (NEW):
+   922→  * GET — paginated AiJobs (?page=&pageSize=&status=&type=); includes provider; batch-fetches users via Promise.all; returns { jobs, total, page, pageSize, totalPages, stats }
+   923→  * Stats: queued/rendering/processing/completed/failed/cancelled/totalToday via groupBy on status where createdAt>=startOfToday
+   924→- Created `src/app/api/admin/jobs/[id]/route.ts` (NEW):
+   925→  * GET — single job detail with provider + user
+   926→  * PATCH — update status (validated against allowed statuses), progress (clamped 0-100), errorMessage; sets completedAt when status is COMPLETED/CANCELLED/FAILED
+   927→  * DELETE — soft cancel: sets status=CANCELLED + completedAt=now + errorMessage='Cancelled by admin'
+   928→- Created `src/app/api/admin/monitoring/route.ts` (NEW):
+   929→  * GET — real-time metrics with 10 parallel queries (Promise.all): active/total provider counts, today's log count + success count, today's cost aggregation, today's avg latency aggregation, per-provider health (with today's cost/requests/failures via separate groupBy), top 5 failing tools (groupBy toolSlug where status!=OK, orderBy _count desc, take 5), rate-limited last hour (count where status=RATE_LIMITED and createdAt>=1hr ago), storage total bytes (BigInt → Number via toNum helper)
+   930→- Created `src/app/api/admin/logs/route.ts` (NEW):
+   931→  * GET — paginated AiLog list with filters: ?page=&pageSize=&providerId=&status=&toolSlug=&routeCategory=&requestType=&from=&to=; includes provider; batch-fetches users via Promise.all + Map; returns { logs, total, page, pageSize, totalPages }
+   932→- Created `src/app/api/admin/costs/route.ts` (NEW):
+   933→  * GET — cost analytics with 5 parallel queries: todayAgg (AiCost.aggregate where day=today), monthAgg (where day>=startOfMonth), dailySeries (AiCost.findMany where day>=30 days ago, grouped by day in-memory), perProviderTodayCosts (groupBy providerId where day=today), providers (for budget threshold checks)
+   934→  * Budget alerts: warning if todayCost >= dailyBudget * 0.8, critical if AiCost.autoDisabled=true (fetched separately via findMany)
+   935→- Created `src/app/api/admin/security/route.ts` (NEW):
+   936→  * GET — security posture: API keys (total/active/inactive/rotatedInLast30Days via count where lastRotatedAt>=30d), rate limit config (from AdminSetting with category='security' + defaults fallback: 60/min, 600/hour, 90 days retention, 90 days rotation), providersWithEmptyKey (findMany where apiKey=''), failedAuthAttempts24h (count where status=ERROR and createdAt>=24h ago), workspace isolation (totalGenerations vs defaultWorkspaceGenerations → isolationPercent), oldestLog timestamp (findFirst orderBy createdAt asc)
+   937→  * PATCH — updates security settings via AdminSetting.upsert (defaultRateLimitPerMinute, defaultRateLimitPerHour, auditLogRetentionDays, requireApiKeyRotationDays); validates non-negative numbers; stores in category='security'
+   938→
+   939→Quality:
+   940→- Every route: `export const dynamic = 'force-dynamic'`
+   941→- Every route: try/catch + console.error with `[admin/...]` prefix + generic 500 with `{ error: string }`
+   942→- Every route: workspace-agnostic (super admin global view)
+   943→- API keys NEVER returned in plain text — always masked via maskApiKey() imported from `@/lib/ai-engine`
+   944→- BigInt fields (AiStorage bytes) → Number(b.toString()) helper for JSON serialization
+   945→- Date filters: new Date(year, month-1, day, 0,0,0,0) for start of today/month; new Date(Date.now() - ms) for relative
+   946→- Aggregations: db.aiLog.aggregate({_sum, _count, _avg}), db.aiCost.aggregate()
+   947→- Grouped queries: db.aiLog.groupBy({by, _count, orderBy: {_count: {field: 'desc'}}, take: 5})
+   948→- invalidateRouteCache() called after ANY provider/route/model change
+   949→- Validates request body before DB writes; returns 400 for invalid input
+   950→
+   951→Verification:
+   952→- `bun run lint` → EXIT=0 (0 errors, 0 warnings)
+   953→- `npx tsc --noEmit | grep -c "src/app/api/admin"` → 0 errors in new files (only pre-existing errors in examples/, prisma/seed-ai-platform.ts, skills/, src/app/api/ai/images/[id]/actions/route.ts remain — out of scope)
+   954→- Initial tsc errors in routing/route.ts POST (TS2322: Type '{}' is not assignable to type 'string' on fallbackProviderId/modelId) — fixed by destructuring via typeof guards instead of `as Record<string, unknown>` destructure, so TypeScript properly narrows types
+   955→
+   956→Stage Summary:
+   957→- 13 NEW route files + 1 EXTENDED (providers/route.ts) — total 14 files under src/app/api/admin/
+   958→- 4 routes under providers/[id]/ (route.ts, test/route.ts, rotate-key/route.ts) + the extended base providers/route.ts
+   959→- All routes lint-clean (eslint exit 0) and tsc-clean (0 errors in new files)
+   960→- Masking: maskApiKey() applied to every apiKey/keyValue in every response; plain-text keys never returned
+   961→- Cache invalidation: invalidateRouteCache() called after every provider/model/route mutation (PUT, POST, PATCH, DELETE)
+   962→- Soft delete pattern: providers set isActive=false (with last-active-provider guard), jobs set status=CANCELLED
+   963→- Real test connection for GLM provider (z-ai-web-dev-sdk ping); configuration check for all other providers
+   964→- Key rotation audit trail: old masked value preserved in rotatedFrom field on deactivated AiProviderKey records
+   965→- All routes workspace-agnostic — Super Admin global view (no ctx.workspaceId filter)
+   966→- BigInt → Number conversion in storage/monitoring routes via safe toNum() helper
+   967→
+   968→---
+   969→Task ID: 3b
+   970→Agent: Backend Agent (Creator APIs)
+   971→Task: Build creator-facing AI API routes (enhanced images, videos, assets, asset-to-module)
+   972→
+   973→Work Log:
+   974→- Read worklog.md (AI-04-1 stage) — confirmed AI Engine library at src/lib/ai-engine/ exports generateImage, generateVideo, generateText, deductCredits, checkCredits, trackUsage, writeLog, resolveRoute, estimateCost, ASPECT_RATIOS, IMAGE_STYLES, VIDEO_PRESETS. Reviewed Prisma schema for AiAsset/AiGeneration/AiJob/AiBrandProfile/AiProject/AiStorage/AiUsage/AiLog/AiTool/AiProvider models.
+   975→- Created shared helper module `src/lib/creator-ai.ts` (lives OUTSIDE src/lib/ai-engine/ on purpose to keep the engine untouched): exports getDemoUser, DEMO_WORKSPACE_ID, safeJsonParse, mapEngineError (provider-name scrubber → 402/429/503), serializeCreatorAsset (strips providerSlug/modelId/costUsd/routeCategory, parses JSON tags/usedIn arrays), bigIntToNumber, parsePagination.
+   976→- Replaced `/api/ai/images/route.ts` — now calls generateImage() from the AI Engine. Validates prompt (≤2000 chars), style ∈ IMAGE_STYLES, aspectRatio ∈ Object.keys(ASPECT_RATIOS). Returns ONLY creator-safe fields: { generationId, assetId, url, thumbnailUrl, width, height, creditsUsed, remainingCredits }. Errors routed through mapEngineError so creators never see "OpenRouter" / "Fal AI" / provider names.
+   977→- Created `images/[id]/route.ts` — GET returns { id, name, description, url, thumbnailUrl, width, height, prompt, style, aspectRatio, tags (parsed JSON), isFavorite, createdAt }. PATCH updates { name?, description?, isFavorite?, tags? } via Prisma update on AiAsset. 404 if image not found.
+   978→- Created `images/[id]/actions/route.ts` — POST with body { action: 'upscale'|'remove-bg'|'crop'|'resize'|'variations'|'edit', params? }. Validates action + action-specific params (crop/resize require width/height 1..4096; edit requires prompt). Creates new AiAsset reusing original URL (sandbox). For upscale doubles w/h; for variations/remove-bg/edit updates name + prompt accordingly. Increments original.usedIn via JSON array push + sets isUsed=true. Saves AiGeneration with toolSlug='IMAGE_EDIT', routeCategory='IMAGE'. Deducts 2 credits via deductCredits(). Looks up a real IMAGE-capable provider for AiLog FK (best-effort, writeLog catches). Returns { assetId, url, creditsUsed, remainingCredits }. 404 if image not found, 402 if insufficient credits.
+   979→- Created `videos/route.ts` — POST calls generateVideo() from the AI Engine. Validates prompt (≤1000 chars), preset ∈ VIDEO_PRESETS, duration 1-60 (integer), resolution ∈ ['720p','1080p','4K']. Returns { jobId, status, creditsUsed, remainingCredits }. Same creator-friendly error mapping as images.
+   980→- Created `videos/[id]/route.ts` — GET returns { id, type, prompt, params (parsed JSON), status, progress, resultUrl, errorMessage, createdAt, startedAt, completedAt, assetId? } — looks up assetId by matching resultUrl on AiAsset. PATCH accepts { status: 'CANCELLED' } only; rejects other status values with 400; refuses cancel of terminal jobs (COMPLETED/FAILED/CANCELLED) with 400.
+   981→- Created `videos/[id]/retry/route.ts` — POST retries a FAILED video job. Resolves VIDEO/IMAGE route via resolveRoute(), creates NEW AiJob with original.prompt + original params (parsed via safeJsonParse), deducts credits, tracks usage + logs. Returns { jobId, status, creditsUsed, remainingCredits }. 404 if not found, 400 if not FAILED.
+   982→- Created `assets/route.ts` — GET the Media Library. Filters: ?page=&pageSize=&type=&folder=&isFavorite=&projectId=&search=&tag=. Validates type ∈ IMAGE/VIDEO/AUDIO/DOCUMENT/TEMPLATE/LOGO/ICON. Search = case-insensitive contains on name OR prompt. Tag filter via SQLite JSON substring match. Returns { assets, total, page, pageSize, totalPages, folders: [{ name, count }] } (7 folders: AI Images/Videos/Logos/Icons/Audio/Documents/Templates). Each asset runs through serializeCreatorAsset (strips provider info, parses JSON).
+   983→- Created `assets/[id]/route.ts` — GET single asset (serialized, creator-safe). PATCH updates { name?, description?, isFavorite?, folder?, tags? } (folder validated against 7 valid values). DELETE unlinks AiGeneration rows (assetId=null) first to preserve relation integrity, then deletes asset.
+   984→- Created `assets/[id]/use/route.ts` — POST marks an asset as used in a module. Body: { module: 'course'|'website'|'blog'|'product'|'community'|'email'|'marketing', entityId?, entityName? }. Validates module. Appends { module, entityId, entityName, usedAt: ISO string } to AiAsset.usedIn JSON array. Sets isUsed=true. Returns { success, usedIn: <updated array> }.
+   985→- Created `brand-profile/route.ts` — GET returns { brandVoice, tone, language, primaryColor, secondaryColor, logoUrl, defaultAspectRatio, guidelines, targetAudience } (creator-safe — workspaceId stripped). Returns sensible defaults if not seeded. PUT upserts on workspaceId='default'; validates brandVoice/tone/defaultAspectRatio/primaryColor/secondaryColor hex patterns, length limits on guidelines/targetAudience/language.
+   986→- Created `dashboard/route.ts` — GET the AI Studio Dashboard payload: todayGenerations, totalGenerations, creditsRemaining (user.credits), creditsUsed (sum of negative CreditTransaction.amount, abs value, handles Prisma.Decimal), recentGenerations (last 6 with tool.outputType lookup + batched asset URL resolution), assetCounts ({ images, videos, logos, icons, audio, documents, templates } via 7 parallel count queries), quickActions (AiTool where isVisible=true → { slug, name, icon, creditCost, category }), favoriteAssets (last 4 AiAsset where isFavorite=true, serialized). All creator-safe.
+   987→- Created `history/route.ts` — GET paginated AiGeneration list with filters ?page=&pageSize=&type=&status=&from=&to=. type filter applies via `tool.outputType` relation (since outputType lives on AiTool, not AiGeneration). Returns { generations, total, page, pageSize, totalPages, types: [{ type, count }] } (aggregates AiGeneration counts per AiTool.outputType via groupBy toolId + batched AiTool lookup). Each generation: { id, toolSlug, toolName, title, status, outputType, creditsUsed, createdAt, assetUrl?, assetId? } — NO providerSlug, NO modelId, NO costUsd, NO inputTokens, NO outputTokens.
+   988→- Created `projects/route.ts` — GET returns { projects: [{ id, name, description, color, status, assetCount, createdAt }] }. POST creates project with body { name, description?, color? } — validates name (required, ≤200 chars), hex color.
+   989→- Created `projects/[id]/route.ts` — GET returns { project: {...}, assets: [...serialized] } (assets listed from workspace). PATCH updates { name?, description?, color?, status? } (status validated against ACTIVE/ARCHIVED/COMPLETED). DELETE removes project — assets remain unlinked.
+   990→
+   991→- Critical-requirements compliance:
+   992→  * `export const dynamic = 'force-dynamic'` on every new file ✅ (15 files)
+   993→  * try/catch + console.error + generic 500 with `{ error: string }` on every handler ✅
+   994→  * `params: Promise<{id: string}>` declared + `await`-ed on all [id] routes ✅
+   995→  * `db.user.findFirst({ orderBy: { createdAt: 'asc' } })` for demo user (via getDemoUser() helper) ✅
+   996→  * workspaceId = 'default' for all creator operations ✅
+   997→  * JSON columns (tags, usedIn, params, resultMeta, metadata) parsed via safeJsonParse before returning ✅
+   998→  * Creator-safe response shapes built EXPLICITLY — never returns raw Prisma records ✅
+   999→  * Did NOT touch /api/ai/chat, /api/ai/landing-page, /api/ai/publish-course, /api/ai/section-rewrite, /api/ai/generate routes ✅
+
+[showing lines 700-999 of 1037; use offset=1000 with limit to continue reading]

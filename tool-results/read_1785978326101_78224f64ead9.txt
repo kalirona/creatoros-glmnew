@@ -1,0 +1,833 @@
+     1→'use client'
+     2→import { useState, useEffect, useRef } from 'react'
+     3→import { motion, AnimatePresence } from 'framer-motion'
+     4→import {
+     5→  Sparkles, Send, Zap, Copy, Check, RotateCcw, ChevronDown, Wand2, Loader2,
+     6→  GraduationCap, FileText, Mail, ShoppingCart, LayoutTemplate, PenLine, Share2,
+     7→  Youtube, Package, MessageSquare, Eye, Pencil, Download, Plus, Globe, DollarSign,
+     8→  ArrowLeft, FileCode, BookOpen, Award, Tag, Search, Rocket, LayoutDashboard,
+     9→  Image as ImageIcon, History, Settings2, Clock, TrendingUp, MessageCircle,
+    10→  Trash2, Pin, Archive, Folder, Send as SendIcon, Palette, Type, Target,
+    11→  type LucideIcon,
+    12→} from 'lucide-react'
+    13→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    14→import { Button } from '@/components/ui/button'
+    15→import { Badge } from '@/components/ui/badge'
+    16→import { Textarea } from '@/components/ui/textarea'
+    17→import { Input } from '@/components/ui/input'
+    18→import { Label } from '@/components/ui/label'
+    19→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    20→import { Skeleton } from '@/components/ui/skeleton'
+    21→import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+    22→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    23→import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+    24→import { toast } from 'sonner'
+    25→import { cn } from '@/lib/utils'
+    26→import { useAppStore } from '@/store/app-store'
+    27→import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
+    28→
+    29→// ============================================================================
+    30→// AI Studio — Enterprise Creator AI Workspace
+    31→// No model names, no provider names, no API keys visible to creators.
+    32→// ============================================================================
+    33→
+    34→type StudioTab = 'dashboard' | 'chat' | 'documents' | 'images' | 'courses' | 'website' | 'marketing' | 'history' | 'settings'
+    35→
+    36→const TABS: { id: StudioTab; label: string; icon: LucideIcon }[] = [
+    37→  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    38→  { id: 'chat', label: 'AI Chat', icon: MessageCircle },
+    39→  { id: 'documents', label: 'Documents', icon: FileText },
+    40→  { id: 'images', label: 'Images', icon: ImageIcon },
+    41→  { id: 'courses', label: 'Courses', icon: GraduationCap },
+    42→  { id: 'website', label: 'Website', icon: Globe },
+    43→  { id: 'marketing', label: 'Marketing', icon: Mail },
+    44→  { id: 'history', label: 'History', icon: History },
+    45→  { id: 'settings', label: 'Settings', icon: Settings2 },
+    46→]
+    47→
+    48→export function AiStudioModule() {
+    49→  const { activeSubTab, navigateTo } = useAppStore()
+    50→  const [tab, setTab] = useState<StudioTab>('dashboard')
+    51→  const [credits, setCredits] = useState(4280)
+    52→
+    53→  useEffect(() => {
+    54→    if (activeSubTab && ['dashboard', 'chat', 'documents', 'images', 'courses', 'website', 'marketing', 'history', 'settings'].includes(activeSubTab)) {
+    55→      // eslint-disable-next-line react-hooks/set-state-in-effect
+    56→      setTab(activeSubTab as StudioTab)
+    57→    }
+    58→  }, [activeSubTab])
+    59→
+    60→  useEffect(() => {
+    61→    fetch('/api/auth/me')
+    62→      .then(r => r.ok ? r.json() : null)
+    63→      .then(d => { if (d?.authenticated) setCredits(d.user?.credits || 0) })
+    64→      .catch(() => {})
+    65→  }, [])
+    66→
+    67→  return (
+    68→    <div className="space-y-5">
+    69→      {/* Header */}
+    70→      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card">
+    71→        <CardContent className="p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    72→          <div className="flex items-center gap-3">
+    73→            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 shadow-lg shadow-primary/30">
+    74→              <Sparkles className="h-6 w-6 text-primary-foreground" />
+    75→            </div>
+    76→            <div>
+    77→              <div className="flex items-center gap-2">
+    78→                <h2 className="text-lg font-bold">AI Studio</h2>
+    79→                <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/20">
+    80→                  <Zap className="h-2.5 w-2.5 mr-1" /> Creator AI
+    81→                </Badge>
+    82→              </div>
+    83→              <p className="text-sm text-muted-foreground">Generate, edit, and publish AI-powered content across your workspace.</p>
+    84→            </div>
+    85→          </div>
+    86→          <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-4 py-2">
+    87→            <Zap className="h-4 w-4 text-primary" />
+    88→            <span className="text-base font-bold tabular-nums">{credits.toLocaleString()}</span>
+    89→            <span className="text-sm text-muted-foreground">credits</span>
+    90→          </div>
+    91→        </CardContent>
+    92→      </Card>
+    93→
+    94→      {/* Tabs */}
+    95→      <Tabs value={tab} onValueChange={(v) => setTab(v as StudioTab)}>
+    96→        <div className="overflow-x-auto scroll-thin pb-1">
+    97→          <TabsList className="flex h-auto gap-1">
+    98→            {TABS.map((t) => {
+    99→              const Icon = t.icon
+   100→              return (
+   101→                <TabsTrigger key={t.id} value={t.id} className="text-sm gap-2 px-4 py-2">
+   102→                  <Icon className="h-4 w-4" /> {t.label}
+   103→                </TabsTrigger>
+   104→              )
+   105→            })}
+   106→          </TabsList>
+   107→        </div>
+   108→
+   109→        <TabsContent value="dashboard"><DashboardTab credits={credits} onNavigate={setTab} /></TabsContent>
+   110→        <TabsContent value="chat"><ChatTab onCreditsUpdate={setCredits} /></TabsContent>
+   111→        <TabsContent value="documents"><DocumentsTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
+   112→        <TabsContent value="images"><ImagesTab onCreditsUpdate={setCredits} /></TabsContent>
+   113→        <TabsContent value="courses"><CoursesTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
+   114→        <TabsContent value="website"><WebsiteTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
+   115→        <TabsContent value="marketing"><MarketingTab onCreditsUpdate={setCredits} /></TabsContent>
+   116→        <TabsContent value="history"><HistoryTab /></TabsContent>
+   117→        <TabsContent value="settings"><SettingsTab /></TabsContent>
+   118→      </Tabs>
+   119→    </div>
+   120→  )
+   121→}
+   122→
+   123→// ─── Dashboard Tab ───────────────────────────────────────────────────────────
+   124→
+   125→function DashboardTab({ credits, onNavigate }: { credits: number; onNavigate: (tab: StudioTab) => void }) {
+   126→  const { data, loading } = useApi<{ generations: any[]; total: number }>('/api/ai/generations?pageSize=6')
+   127→
+   128→  const stats = [
+   129→    { label: 'Credits Remaining', value: credits.toLocaleString(), icon: Zap, color: 'text-primary', bg: 'bg-primary/10' },
+   130→    { label: 'Generations Today', value: (data?.generations || []).filter((g: any) => new Date(g.createdAt).toDateString() === new Date().toDateString()).length, icon: TrendingUp, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+   131→    { label: 'Total Generations', value: data?.total || 0, icon: FileText, color: 'text-sky-500', bg: 'bg-sky-500/10' },
+   132→    { label: 'Active Tools', value: 10, icon: Wand2, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+   133→  ]
+   134→
+   135→  const quickActions: { label: string; desc: string; icon: LucideIcon; tab: StudioTab; color: string }[] = [
+   136→    { label: 'Generate Course', desc: 'AI creates a complete course outline', icon: GraduationCap, tab: 'courses', color: 'bg-emerald-500/10 text-emerald-600' },
+   137→    { label: 'Generate Landing Page', desc: 'High-converting landing page copy', icon: Globe, tab: 'website', color: 'bg-sky-500/10 text-sky-600' },
+   138→    { label: 'Generate Blog Post', desc: 'SEO-friendly blog content', icon: FileText, tab: 'documents', color: 'bg-violet-500/10 text-violet-600' },
+   139→    { label: 'Generate Image', desc: 'Create custom AI images', icon: ImageIcon, tab: 'images', color: 'bg-amber-500/10 text-amber-600' },
+   140→    { label: 'Generate Email', desc: 'High-converting email campaigns', icon: Mail, tab: 'marketing', color: 'bg-rose-500/10 text-rose-600' },
+   141→    { label: 'Generate Product', desc: 'Product descriptions and positioning', icon: Package, tab: 'documents', color: 'bg-cyan-500/10 text-cyan-600' },
+   142→  ]
+   143→
+   144→  const favoriteTools = [
+   145→    { name: 'Course Generator', slug: 'COURSE_GENERATOR', icon: GraduationCap, cost: 15 },
+   146→    { name: 'Email Writer', slug: 'EMAIL_WRITER', icon: Mail, cost: 4 },
+   147→    { name: 'Blog Writer', slug: 'BLOG_WRITER', icon: FileText, cost: 8 },
+   148→    { name: 'Social Media', slug: 'SOCIAL_MEDIA', icon: Share2, cost: 3 },
+   149→  ]
+   150→
+   151→  return (
+   152→    <div className="space-y-5">
+   153→      {/* Stats */}
+   154→      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+   155→        {stats.map((s) => {
+   156→          const Icon = s.icon
+   157→          return (
+   158→            <Card key={s.label}><CardContent className="p-4 flex items-center gap-3">
+   159→              <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', s.bg)}><Icon className={cn('h-5 w-5', s.color)} /></div>
+   160→              <div><p className="text-xl font-bold tabular-nums leading-none">{s.value}</p><p className="text-xs text-muted-foreground mt-1">{s.label}</p></div>
+   161→            </CardContent></Card>
+   162→          )
+   163→        })}
+   164→      </div>
+   165→
+   166→      {/* Quick Actions */}
+   167→      <div>
+   168→        <p className="text-sm font-semibold text-muted-foreground mb-3">Quick Actions</p>
+   169→        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+   170→          {quickActions.map((a, i) => {
+   171→            const Icon = a.icon
+   172→            return (
+   173→              <motion.button key={a.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+   174→                onClick={() => onNavigate(a.tab)} className="text-left">
+   175→                <Card className="h-full hover:border-primary/40 hover:shadow-md transition-all cursor-pointer">
+   176→                  <CardContent className="p-4 flex items-center gap-3">
+   177→                    <div className={cn('flex h-11 w-11 items-center justify-center rounded-xl shrink-0', a.color)}><Icon className="h-5 w-5" /></div>
+   178→                    <div className="flex-1 min-w-0">
+   179→                      <p className="text-sm font-semibold">{a.label}</p>
+   180→                      <p className="text-xs text-muted-foreground truncate">{a.desc}</p>
+   181→                    </div>
+   182→                    <ChevronDown className="h-4 w-4 text-muted-foreground -rotate-90 shrink-0" />
+   183→                  </CardContent>
+   184→                </Card>
+   185→              </motion.button>
+   186→            )
+   187→          })}
+   188→        </div>
+   189→      </div>
+   190→
+   191→      {/* Favorite Tools + Recent Activity */}
+   192→      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+   193→        {/* Favorite Tools */}
+   194→        <Card>
+   195→          <CardHeader className="pb-3"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Favorite Tools</CardTitle></CardHeader>
+   196→          <CardContent className="space-y-1">
+   197→            {favoriteTools.map((t) => {
+   198→              const Icon = t.icon
+   199→              return (
+   200→                <button key={t.slug} onClick={() => onNavigate('documents')} className="flex w-full items-center gap-2.5 rounded-lg p-2 hover:bg-muted transition text-left">
+   201→                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-primary"><Icon className="h-4 w-4" /></div>
+   202→                  <span className="flex-1 text-sm font-medium">{t.name}</span>
+   203→                  <Badge variant="secondary" className="text-[10px]">{t.cost}cr</Badge>
+   204→                </button>
+   205→              )
+   206→            })}
+   207→          </CardContent>
+   208→        </Card>
+   209→
+   210→        {/* Recent Generations */}
+   211→        <Card>
+   212→          <CardHeader className="pb-3 flex-row items-center justify-between">
+   213→            <CardTitle className="text-sm flex items-center gap-2"><Clock className="h-4 w-4 text-primary" /> Recent AI Work</CardTitle>
+   214→            <Button variant="ghost" size="sm" className="text-xs" onClick={() => onNavigate('history')}>View all</Button>
+   215→          </CardHeader>
+   216→          <CardContent className="p-0">
+   217→            {loading ? (
+   218→              <div className="p-4 space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+   219→            ) : !data?.generations || data.generations.length === 0 ? (
+   220→              <div className="p-8 text-center"><Sparkles className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No generations yet</p><p className="text-xs text-muted-foreground mt-1">Start generating with AI to see your work here.</p></div>
+   221→            ) : (
+   222→              <div className="divide-y">
+   223→                {data.generations.map((g: any) => (
+   224→                  <div key={g.id} className="flex items-center gap-3 p-3 hover:bg-muted/50 transition">
+   225→                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0"><FileText className="h-4 w-4" /></div>
+   226→                    <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{g.title}</p><p className="text-xs text-muted-foreground">{g.toolSlug} · {timeAgo(g.createdAt)} · {g.creditsUsed} credits</p></div>
+   227→                    <Badge variant="secondary" className="text-[10px]">{g.status}</Badge>
+   228→                  </div>
+   229→                ))}
+   230→              </div>
+   231→            )}
+   232→          </CardContent>
+   233→        </Card>
+   234→      </div>
+   235→    </div>
+   236→  )
+   237→}
+   238→
+   239→// ─── Chat Tab ────────────────────────────────────────────────────────────────
+   240→
+   241→function ChatTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => void }) {
+   242→  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
+   243→  const [input, setInput] = useState('')
+   244→  const [loading, setLoading] = useState(false)
+   245→  const [tool, setTool] = useState('CHAT')
+   246→  const scrollRef = useRef<HTMLDivElement>(null)
+   247→
+   248→  const TOOLS = [
+   249→    { value: 'CHAT', label: 'General Assistant' },
+   250→    { value: 'COURSE', label: 'Course Architect' },
+   251→    { value: 'EMAIL', label: 'Email Copywriter' },
+   252→    { value: 'SALES', label: 'Sales Page Writer' },
+   253→    { value: 'BLOG', label: 'Blog Writer' },
+   254→    { value: 'SOCIAL', label: 'Social Media' },
+   255→    { value: 'SCRIPT', label: 'YouTube Script' },
+   256→  ]
+   257→
+   258→  useEffect(() => {
+   259→    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+   260→  }, [messages])
+   261→
+   262→  const send = async () => {
+   263→    const text = input.trim()
+   264→    if (!text || loading) return
+   265→    const newMessages = [...messages, { role: 'user' as const, content: text }]
+   266→    setMessages(newMessages)
+   267→    setInput('')
+   268→    setLoading(true)
+   269→    try {
+   270→      const res = await fetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool, messages: newMessages }) })
+   271→      const raw = await res.text()
+   272→      if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+   273→      const data = JSON.parse(raw)
+   274→      setMessages(prev => [...prev, { role: 'assistant', content: data.content || data.reply || '' }])
+   275→      if (data.remainingCredits !== undefined) onCreditsUpdate(data.remainingCredits)
+   276→      toast.success('AI responded', { description: `-${data.creditsUsed || 2} credits` })
+   277→    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed'); setMessages(prev => prev.slice(0, -1)) }
+   278→    finally { setLoading(false) }
+   279→  }
+   280→
+   281→  return (
+   282→    <div className="flex flex-col h-[calc(100vh-300px)] min-h-[400px]">
+   283→      <div className="flex items-center gap-2 mb-3">
+   284→        <Select value={tool} onValueChange={setTool}>
+   285→          <SelectTrigger className="w-52 h-9 text-sm"><SelectValue /></SelectTrigger>
+   286→          <SelectContent>{TOOLS.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+   287→        </Select>
+   288→        {messages.length > 0 && <Button variant="ghost" size="sm" onClick={() => setMessages([])} className="text-sm"><RotateCcw className="h-3.5 w-3.5 mr-1.5" /> New Chat</Button>}
+   289→      </div>
+   290→
+   291→      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-thin space-y-4 pr-2">
+   292→        {messages.length === 0 ? (
+   293→          <div className="flex flex-col items-center justify-center h-full text-center">
+   294→            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4"><Sparkles className="h-8 w-8 text-primary" /></div>
+   295→            <p className="text-base font-semibold">AI Chat</p>
+   296→            <p className="text-sm text-muted-foreground mt-1 max-w-sm">Ask me anything about your business — course ideas, email copy, marketing strategy, and more.</p>
+   297→            <div className="mt-5 flex flex-wrap gap-2 justify-center max-w-lg">
+   298→              {['Give me 5 course ideas for creators', 'Write a welcome email for new students', 'Create a social media content plan', 'Generate a sales page outline'].map(ex => (
+   299→                <button key={ex} onClick={() => setInput(ex)} className="rounded-full border px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition">{ex}</button>
+   300→              ))}
+   301→            </div>
+   302→          </div>
+   303→        ) : (
+   304→          messages.map((m, i) => (
+   305→            <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn('flex gap-3', m.role === 'user' && 'flex-row-reverse')}>
+   306→              <Avatar className="h-9 w-9 shrink-0">
+   307→                {m.role === 'assistant' ? <AvatarFallback className="bg-primary/15 text-primary"><Sparkles className="h-4 w-4" /></AvatarFallback>
+   308→                  : <AvatarFallback className="bg-muted text-xs">You</AvatarFallback>}
+   309→              </Avatar>
+   310→              <div className={cn('flex-1 min-w-0 max-w-[80%] group', m.role === 'user' && 'flex justify-end')}>
+   311→                <div className={cn('rounded-xl px-4 py-3 text-sm', m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted')}>
+   312→                  <div className="whitespace-pre-wrap">{m.content}</div>
+   313→                </div>
+   314→                {m.role === 'assistant' && (
+   315→                  <div className="mt-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+   316→                    <button onClick={() => { navigator.clipboard.writeText(m.content); toast.success('Copied') }} className="rounded p-1 text-xs text-muted-foreground hover:bg-muted" title="Copy"><Copy className="h-3 w-3" /></button>
+   317→                  </div>
+   318→                )}
+   319→              </div>
+   320→            </motion.div>
+   321→          ))
+   322→        )}
+   323→        {loading && (
+   324→          <div className="flex gap-3">
+   325→            <Avatar className="h-9 w-9 shrink-0"><AvatarFallback className="bg-primary/15 text-primary"><Loader2 className="h-4 w-4 animate-spin" /></AvatarFallback></Avatar>
+   326→            <div className="rounded-xl bg-muted px-4 py-3"><div className="flex gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '0ms' }} /><span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '150ms' }} /><span className="h-2 w-2 rounded-full bg-muted-foreground/50 animate-bounce" style={{ animationDelay: '300ms' }} /></div></div>
+   327→          </div>
+   328→        )}
+   329→      </div>
+   330→
+   331→      <div className="mt-3 flex gap-2">
+   332→        <Textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder="Type your message... (Enter to send, Shift+Enter for new line)" rows={2} className="flex-1 resize-none text-sm" disabled={loading} />
+   333→        <Button onClick={send} disabled={loading || !input.trim()} size="icon" className="h-auto px-3">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</Button>
+   334→      </div>
+   335→    </div>
+   336→  )
+   337→}
+   338→
+   339→// ─── Documents Tab ──────────────────────────────────────────────────────────
+   340→
+   341→interface Tool { id: string; slug: string; name: string; description: string; icon: string; category: string; creditCost: number; outputType: string; isPro: boolean }
+   342→const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = { GraduationCap, FileText, Mail, ShoppingCart, LayoutTemplate, PenLine, Share2, Youtube, Package, MessageSquare, Sparkles }
+   343→
+   344→function DocumentsTab({ onCreditsUpdate, onNavigate }: { onCreditsUpdate: (c: number) => void; onNavigate: (module: string, subTab?: string) => void }) {
+   345→  const [tools, setTools] = useState<Tool[]>([])
+   346→  const [toolsLoading, setToolsLoading] = useState(true)
+   347→  const [activeTool, setActiveTool] = useState<Tool | null>(null)
+   348→  const [input, setInput] = useState('')
+   349→  const [loading, setLoading] = useState(false)
+   350→  const [result, setResult] = useState<any>(null)
+   351→
+   352→  useEffect(() => { fetch('/api/ai/generate').then(r => r.json()).then(d => { setTools(d.tools || []); setToolsLoading(false) }).catch(() => setToolsLoading(false)) }, [])
+   353→
+   354→  const generate = async () => {
+   355→    if (!input.trim() || !activeTool || loading) return
+   356→    setLoading(true); setResult(null)
+   357→    try {
+   358→      const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 55000)
+   359→      const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolSlug: activeTool.slug, input: input.trim() }), signal: controller.signal })
+   360→      clearTimeout(timeout)
+   361→      const raw = await res.text()
+   362→      if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+   363→      const data = JSON.parse(raw)
+   364→      setResult(data)
+   365→      if (data.remainingCredits !== undefined) onCreditsUpdate(data.remainingCredits)
+   366→      toast.success(`Generated! -${data.creditsUsed} credits`)
+   367→    } catch (e) { toast.error(e instanceof Error ? (e.name === 'AbortError' ? 'Timed out. Try again.' : e.message) : 'Failed') }
+   368→    finally { setLoading(false) }
+   369→  }
+   370→
+   371→  if (result) {
+   372→    const outputText = result.raw || result.output || JSON.stringify(result.structured, null, 2)
+   373→    return (
+   374→      <div className="space-y-4 max-w-3xl">
+   375→        <Button variant="ghost" size="sm" onClick={() => { setResult(null); setInput('') }}><ArrowLeft className="h-4 w-4 mr-1.5" /> Back to tools</Button>
+   376→        <Card>
+   377→          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> {activeTool?.name} Result</CardTitle></CardHeader>
+   378→          <CardContent className="space-y-3">
+   379→            <div className="rounded-lg bg-muted/50 p-4 max-h-[50vh] overflow-y-auto scroll-thin"><pre className="text-sm whitespace-pre-wrap font-sans">{outputText}</pre></div>
+   380→            <div className="flex flex-wrap items-center gap-2">
+   381→              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(outputText); toast.success('Copied') }}><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy</Button>
+   382→              <Button size="sm" variant="outline" onClick={() => { setResult(null); generate() }}><RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Regenerate</Button>
+   383→              <Button size="sm" variant="outline" onClick={() => onNavigate('pages-funnels', 'blog')}><Globe className="h-3.5 w-3.5 mr-1.5" /> Send to Website</Button>
+   384→              <Button size="sm" variant="outline" onClick={() => onNavigate('courses')}><GraduationCap className="h-3.5 w-3.5 mr-1.5" /> Send to Course</Button>
+   385→              <Button size="sm" variant="outline" onClick={() => onNavigate('email')}><Mail className="h-3.5 w-3.5 mr-1.5" /> Send to Marketing</Button>
+   386→              <Badge variant="secondary" className="text-xs ml-auto">{result.creditsUsed} credits used</Badge>
+   387→            </div>
+   388→          </CardContent>
+   389→        </Card>
+   390→      </div>
+   391→    )
+   392→  }
+   393→
+   394→  if (activeTool) {
+   395→    return (
+   396→      <div className="space-y-4 max-w-2xl">
+   397→        <Button variant="ghost" size="sm" onClick={() => { setActiveTool(null); setInput('') }}><ArrowLeft className="h-4 w-4 mr-1.5" /> Back to tools</Button>
+   398→        <Card>
+   399→          <CardHeader><CardTitle className="text-base flex items-center gap-2">{(() => { const Icon = ICON_MAP[activeTool.icon] || Sparkles; return <Icon className="h-4 w-4 text-primary" /> })()}{activeTool.name}</CardTitle></CardHeader>
+   400→          <CardContent className="space-y-3">
+   401→            <p className="text-sm text-muted-foreground">{activeTool.description}</p>
+   402→            <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe what you want to generate..." rows={5} disabled={loading} className="text-sm" />
+   403→            <div className="flex items-center justify-between"><Badge variant="secondary" className="text-xs">{activeTool.creditCost} credits</Badge>
+   404→              <Button onClick={generate} disabled={loading || !input.trim()}>{loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1.5" />}Generate</Button>
+   405→            </div>
+   406→          </CardContent>
+   407→        </Card>
+   408→      </div>
+   409→    )
+   410→  }
+   411→
+   412→  const grouped = tools.reduce<Record<string, Tool[]>>((acc, t) => { (acc[t.category] ||= []).push(t); return acc }, {})
+   413→  return (
+   414→    <div className="space-y-4">
+   415→      {toolsLoading ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>
+   416→      : Object.keys(grouped).length === 0 ? <div className="p-12 text-center"><FileText className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No AI tools available</p><p className="text-xs text-muted-foreground mt-1">Contact your admin to configure AI tools.</p></div>
+   417→      : Object.entries(grouped).map(([cat, list]) => (
+   418→        <div key={cat}>
+   419→          <p className="text-sm font-semibold text-muted-foreground mb-3">{cat}</p>
+   420→          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+   421→            {list.map((t, i) => { const Icon = ICON_MAP[t.icon] || Sparkles; return (
+   422→              <motion.button key={t.slug} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} onClick={() => { setActiveTool(t); setResult(null) }} className="group text-left">
+   423→                <Card className="h-full hover:border-primary/40 hover:shadow-lg transition-all cursor-pointer">
+   424→                  <CardContent className="p-4">
+   425→                    <div className="flex items-center justify-between mb-3">
+   426→                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-primary group-hover:scale-110 transition-transform"><Icon className="h-5 w-5" /></div>
+   427→                      <div className="flex items-center gap-1.5">{t.isPro && <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-600">PRO</Badge>}<Badge variant="secondary" className="text-[10px]">{t.creditCost}cr</Badge></div>
+   428→                    </div>
+   429→                    <p className="font-semibold text-sm">{t.name}</p>
+   430→                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{t.description}</p>
+   431→                    <div className="mt-3 flex items-center gap-1 text-xs text-primary opacity-0 group-hover:opacity-100 transition"><Wand2 className="h-3 w-3" /> Open generator</div>
+   432→                  </CardContent>
+   433→                </Card>
+   434→              </motion.button>
+   435→            )})}
+   436→          </div>
+   437→        </div>
+   438→      ))}
+   439→    </div>
+   440→  )
+   441→}
+   442→
+   443→// ─── Images Tab — 3-panel layout ─────────────────────────────────────────────
+   444→
+   445→function ImagesTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => void }) {
+   446→  const [prompt, setPrompt] = useState('')
+   447→  const [negativePrompt, setNegativePrompt] = useState('')
+   448→  const [aspectRatio, setAspectRatio] = useState('1:1')
+   449→  const [loading, setLoading] = useState(false)
+   450→  const [images, setImages] = useState<Array<{ url: string; prompt: string; id: string }>>([])
+   451→
+   452→  const generate = async () => {
+   453→    if (!prompt.trim() || loading) return
+   454→    setLoading(true)
+   455→    try {
+   456→      const res = await fetch('/api/ai/images', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: prompt.trim() }) })
+   457→      if (!res.ok) { const j = await res.json(); throw new Error(j.error || 'Failed') }
+   458→      const data = await res.json()
+   459→      const newImage = { url: data.url, prompt: prompt.trim(), id: `img-${Date.now()}` }
+   460→      setImages(prev => [newImage, ...prev])
+   461→      if (data.remainingCredits !== undefined) onCreditsUpdate(data.remainingCredits)
+   462→      toast.success('Image generated!')
+   463→      setPrompt('')
+   464→    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed to generate image') }
+   465→    finally { setLoading(false) }
+   466→  }
+   467→
+   468→  const saveToMedia = (img: { url: string; prompt: string }) => {
+   469→    toast.success('Saved to Media Library', { description: 'You can now use this image in courses, website, and products.' })
+   470→  }
+   471→
+   472→  const RATIOS = [
+   473→    { value: '1:1', label: 'Square (1:1)', w: 'w-12', h: 'h-12' },
+   474→    { value: '16:9', label: 'Wide (16:9)', w: 'w-16', h: 'h-9' },
+   475→    { value: '9:16', label: 'Tall (9:16)', w: 'w-9', h: 'h-16' },
+   476→    { value: '4:3', label: 'Classic (4:3)', w: 'w-12', h: 'h-9' },
+   477→  ]
+   478→
+   479→  return (
+   480→    <div className="grid gap-4 lg:grid-cols-[280px_1fr_240px]">
+   481→      {/* Left: Prompt + Settings */}
+   482→      <div className="space-y-3">
+   483→        <Card>
+   484→          <CardHeader className="pb-3"><CardTitle className="text-sm">Generate Image</CardTitle></CardHeader>
+   485→          <CardContent className="space-y-3">
+   486→            <div><Label className="text-xs font-medium">Prompt</Label><Textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the image..." rows={4} className="mt-1 text-sm" disabled={loading} /></div>
+   487→            <div><Label className="text-xs font-medium">Negative Prompt</Label><Input value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="What to avoid..." className="mt-1 h-8 text-sm" disabled={loading} /></div>
+   488→            <div>
+   489→              <Label className="text-xs font-medium">Aspect Ratio</Label>
+   490→              <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+   491→                {RATIOS.map(r => <button key={r.value} onClick={() => setAspectRatio(r.value)} disabled={loading} className={cn('flex flex-col items-center gap-1 rounded-md border p-2 transition', aspectRatio === r.value ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted')}><div className={cn('rounded border-2 border-current', r.w, r.h)} /><span className="text-[9px] font-medium">{r.value}</span></button>)}
+   492→              </div>
+   493→            </div>
+   494→            <Button onClick={generate} disabled={loading || !prompt.trim()} className="w-full">{loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1.5" />}Generate · 3cr</Button>
+   495→          </CardContent>
+   496→        </Card>
+   497→      </div>
+   498→
+   499→      {/* Center: Image Grid */}
+   500→      <div className="min-w-0">
+   501→        {images.length === 0 && !loading ? (
+   502→          <div className="flex flex-col items-center justify-center min-h-[400px] text-center rounded-xl border border-dashed">
+   503→            <ImageIcon className="h-12 w-12 text-muted-foreground/40 mb-3" />
+   504→            <p className="text-sm font-medium">No images generated yet</p>
+   505→            <p className="text-xs text-muted-foreground mt-1">Describe an image and click Generate.</p>
+   506→          </div>
+   507→        ) : (
+   508→          <div className="grid gap-3 sm:grid-cols-2">
+   509→            {loading && <Card className="overflow-hidden"><div className="aspect-square bg-muted flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></Card>}
+   510→            {images.map((img) => (
+   511→              <Card key={img.id} className="overflow-hidden group">
+   512→                <div className="aspect-square bg-muted relative">
+   513→                  <img src={img.url} alt={img.prompt} className="h-full w-full object-cover" />
+   514→                  {/* Hover actions */}
+   515→                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-2 p-3">
+   516→                    <div className="flex gap-1.5">
+   517→                      <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => { navigator.clipboard.writeText(img.url); toast.success('URL copied') }}><Copy className="h-3 w-3 mr-1" />Copy</Button>
+   518→                      <Button size="sm" variant="secondary" className="h-7 text-xs" asChild><a href={img.url} download><Download className="h-3 w-3 mr-1" />Save</a></Button>
+   519→                    </div>
+   520→                    <div className="flex gap-1.5">
+   521→                      <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => saveToMedia(img)}><Folder className="h-3 w-3 mr-1" />Media Library</Button>
+   522→                    </div>
+   523→                    <div className="flex gap-1.5">
+   524→                      <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => toast.info('Add to Course')}><GraduationCap className="h-3 w-3 mr-1" />Course</Button>
+   525→                      <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => toast.info('Add to Website')}><Globe className="h-3 w-3 mr-1" />Website</Button>
+   526→                    </div>
+   527→                  </div>
+   528→                </div>
+   529→                <CardContent className="p-3"><p className="text-xs text-muted-foreground line-clamp-2">{img.prompt}</p></CardContent>
+   530→              </Card>
+   531→            ))}
+   532→          </div>
+   533→        )}
+   534→      </div>
+   535→
+   536→      {/* Right: History */}
+   537→      <div className="space-y-2">
+   538→        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">History</p>
+   539→        {images.length === 0 ? <p className="text-xs text-muted-foreground">Generated images appear here.</p> : (
+   540→          <div className="space-y-2 max-h-[500px] overflow-y-auto scroll-thin">
+   541→            {images.map(img => <button key={img.id} className="block w-full rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary/40 transition"><img src={img.url} alt={img.prompt} className="h-16 w-full object-cover" /></button>)}
+   542→          </div>
+   543→        )}
+   544→      </div>
+   545→    </div>
+   546→  )
+   547→}
+   548→
+   549→// ─── Courses Tab ────────────────────────────────────────────────────────────
+   550→
+   551→function CoursesTab({ onCreditsUpdate, onNavigate }: { onCreditsUpdate: (c: number) => void; onNavigate: (module: string, subTab?: string) => void }) {
+   552→  const [input, setInput] = useState('')
+   553→  const [loading, setLoading] = useState(false)
+   554→  const [result, setResult] = useState<any>(null)
+   555→
+   556→  const generate = async () => {
+   557→    if (!input.trim() || loading) return
+   558→    setLoading(true); setResult(null)
+   559→    try {
+   560→      const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolSlug: 'COURSE_GENERATOR', input: input.trim() }) })
+   561→      const raw = await res.text()
+   562→      if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+   563→      const data = JSON.parse(raw)
+   564→      setResult(data)
+   565→      if (data.remainingCredits !== undefined) onCreditsUpdate(data.remainingCredits)
+   566→      toast.success(`Course generated! -${data.creditsUsed} credits`)
+   567→    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+   568→    finally { setLoading(false) }
+   569→  }
+   570→
+   571→  return (
+   572→    <div className="space-y-4 max-w-3xl">
+   573→      <Card>
+   574→        <CardHeader><CardTitle className="text-base flex items-center gap-2"><GraduationCap className="h-4 w-4 text-primary" /> AI Course Generator</CardTitle></CardHeader>
+   575→        <CardContent className="space-y-3">
+   576→          <p className="text-sm text-muted-foreground">Describe your course idea and AI will generate a complete outline with modules, lessons, and pricing.</p>
+   577→          <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="e.g. A 30-day course teaching beginners how to start a YouTube channel" rows={3} disabled={loading} className="text-sm" />
+   578→          <div className="flex items-center justify-between"><Badge variant="secondary" className="text-xs">15 credits</Badge>
+   579→            <Button onClick={generate} disabled={loading || !input.trim()}>{loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1.5" />}Generate Course</Button>
+   580→          </div>
+   581→        </CardContent>
+   582→      </Card>
+   583→      {result && (
+   584→        <Card>
+   585→          <CardHeader><CardTitle className="text-sm">Generated Course</CardTitle></CardHeader>
+   586→          <CardContent className="space-y-3">
+   587→            <div className="rounded-lg bg-muted/50 p-4 max-h-[50vh] overflow-y-auto scroll-thin"><pre className="text-sm whitespace-pre-wrap font-sans">{result.raw || result.output || JSON.stringify(result.structured, null, 2)}</pre></div>
+   588→            <div className="flex flex-wrap items-center gap-2">
+   589→              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(result.raw || result.output || ''); toast.success('Copied') }}><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy</Button>
+   590→              <Button size="sm" variant="outline" onClick={() => { setResult(null); generate() }}><RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Regenerate</Button>
+   591→              <Button size="sm" onClick={() => onNavigate('courses')}><GraduationCap className="h-3.5 w-3.5 mr-1.5" /> Open Course Builder</Button>
+   592→              <Badge variant="secondary" className="text-xs ml-auto">{result.creditsUsed} credits</Badge>
+   593→            </div>
+   594→          </CardContent>
+   595→        </Card>
+   596→      )}
+   597→    </div>
+   598→  )
+   599→}
+   600→
+   601→// ─── Website Tab ────────────────────────────────────────────────────────────
+   602→
+   603→function WebsiteTab({ onCreditsUpdate, onNavigate }: { onCreditsUpdate: (c: number) => void; onNavigate: (module: string, subTab?: string) => void }) {
+   604→  const [input, setInput] = useState('')
+   605→  const [loading, setLoading] = useState(false)
+   606→  const [result, setResult] = useState<any>(null)
+   607→
+   608→  const generate = async () => {
+   609→    if (!input.trim() || loading) return
+   610→    setLoading(true); setResult(null)
+   611→    try {
+   612→      const res = await fetch('/api/ai/landing-page', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selling: input.trim(), category: 'Course' }) })
+   613→      const raw = await res.text()
+   614→      if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+   615→      const data = JSON.parse(raw)
+   616→      setResult(data)
+   617→      toast.success(`Landing page generated! -${data.creditsUsed} credits`)
+   618→    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+   619→    finally { setLoading(false) }
+   620→  }
+   621→
+   622→  return (
+   623→    <div className="space-y-4 max-w-3xl">
+   624→      <Card>
+   625→        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Globe className="h-4 w-4 text-primary" /> AI Website Generator</CardTitle></CardHeader>
+   626→        <CardContent className="space-y-3">
+   627→          <p className="text-sm text-muted-foreground">Tell AI what you're selling and it will generate a complete landing page with hero, features, pricing, testimonials, FAQ, and CTA.</p>
+   628→          <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="e.g. An AI course teaching creators how to use ChatGPT for content" rows={3} disabled={loading} className="text-sm" />
+   629→          <div className="flex items-center justify-between"><Badge variant="secondary" className="text-xs">7 credits</Badge>
+   630→            <Button onClick={generate} disabled={loading || !input.trim()}>{loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1.5" />}Generate Landing Page</Button>
+   631→          </div>
+   632→        </CardContent>
+   633→      </Card>
+   634→      {result && (
+   635→        <Card>
+   636→          <CardHeader><CardTitle className="text-sm">Generated Landing Page</CardTitle></CardHeader>
+   637→          <CardContent className="space-y-3">
+   638→            <div className="rounded-lg bg-muted/50 p-4 max-h-[50vh] overflow-y-auto scroll-thin"><pre className="text-sm whitespace-pre-wrap font-sans">{JSON.stringify(result, null, 2)}</pre></div>
+   639→            <div className="flex flex-wrap items-center gap-2">
+   640→              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(JSON.stringify(result, null, 2)); toast.success('Copied') }}><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy JSON</Button>
+   641→              <Button size="sm" onClick={() => onNavigate('pages-funnels', 'landing')}><Globe className="h-3.5 w-3.5 mr-1.5" /> Open in Website Builder</Button>
+   642→              <Badge variant="secondary" className="text-xs ml-auto">{result.creditsUsed} credits</Badge>
+   643→            </div>
+   644→          </CardContent>
+   645→        </Card>
+   646→      )}
+   647→    </div>
+   648→  )
+   649→}
+   650→
+   651→// ─── Marketing Tab ──────────────────────────────────────────────────────────
+   652→
+   653→function MarketingTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => void }) {
+   654→  const [tool, setTool] = useState('EMAIL')
+   655→  const [input, setInput] = useState('')
+   656→  const [loading, setLoading] = useState(false)
+   657→  const [result, setResult] = useState<any>(null)
+   658→
+   659→  const TOOLS = [
+   660→    { value: 'EMAIL', label: 'Email Campaign', slug: 'EMAIL_WRITER', cost: 4 },
+   661→    { value: 'SOCIAL', label: 'Social Media Post', slug: 'SOCIAL_MEDIA', cost: 3 },
+   662→    { value: 'BLOG', label: 'Blog Post', slug: 'BLOG_WRITER', cost: 8 },
+   663→    { value: 'SALES', label: 'Sales Page', slug: 'SALES_PAGE', cost: 12 },
+   664→    { value: 'SCRIPT', label: 'YouTube Script', slug: 'SCRIPT_WRITER', cost: 10 },
+   665→  ]
+   666→
+   667→  const generate = async () => {
+   668→    if (!input.trim() || loading) return
+   669→    const selected = TOOLS.find(t => t.value === tool); if (!selected) return
+   670→    setLoading(true); setResult(null)
+   671→    try {
+   672→      const res = await fetch('/api/ai/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolSlug: selected.slug, input: input.trim() }) })
+   673→      const raw = await res.text()
+   674→      if (!res.ok) { let m = 'Failed'; try { const j = JSON.parse(raw); m = j.error } catch {} throw new Error(m) }
+   675→      const data = JSON.parse(raw)
+   676→      setResult(data)
+   677→      if (data.remainingCredits !== undefined) onCreditsUpdate(data.remainingCredits)
+   678→      toast.success(`Generated! -${data.creditsUsed} credits`)
+   679→    } catch (e) { toast.error(e instanceof Error ? e.message : 'Failed') }
+   680→    finally { setLoading(false) }
+   681→  }
+   682→
+   683→  return (
+   684→    <div className="space-y-4 max-w-3xl">
+   685→      <Card>
+   686→        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Mail className="h-4 w-4 text-primary" /> AI Marketing Generator</CardTitle></CardHeader>
+   687→        <CardContent className="space-y-3">
+   688→          <Select value={tool} onValueChange={setTool}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{TOOLS.map(t => <SelectItem key={t.value} value={t.value}>{t.label} ({t.cost}cr)</SelectItem>)}</SelectContent></Select>
+   689→          <Textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Describe what you want to generate..." rows={3} disabled={loading} className="text-sm" />
+   690→          <Button onClick={generate} disabled={loading || !input.trim()}>{loading ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Wand2 className="h-4 w-4 mr-1.5" />}Generate</Button>
+   691→        </CardContent>
+   692→      </Card>
+   693→      {result && (
+   694→        <Card>
+   695→          <CardHeader><CardTitle className="text-sm">Result</CardTitle></CardHeader>
+   696→          <CardContent className="space-y-3">
+   697→            <div className="rounded-lg bg-muted/50 p-4 max-h-[50vh] overflow-y-auto scroll-thin"><pre className="text-sm whitespace-pre-wrap font-sans">{result.raw || result.output || ''}</pre></div>
+   698→            <div className="flex flex-wrap gap-2">
+   699→              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(result.raw || result.output || ''); toast.success('Copied') }}><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy</Button>
+   700→              <Button size="sm" variant="outline" onClick={() => { setResult(null); generate() }}><RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Regenerate</Button>
+   701→              <Badge variant="secondary" className="text-xs ml-auto">{result.creditsUsed} credits</Badge>
+   702→            </div>
+   703→          </CardContent>
+   704→        </Card>
+   705→      )}
+   706→    </div>
+   707→  )
+   708→}
+   709→
+   710→// ─── History Tab ────────────────────────────────────────────────────────────
+   711→
+   712→function HistoryTab() {
+   713→  const { data, loading } = useApi<{ generations: any[]; total: number }>('/api/ai/generations?pageSize=50')
+   714→  const [search, setSearch] = useState('')
+   715→  const [filter, setFilter] = useState('all')
+   716→
+   717→  const generations = data?.generations || []
+   718→  const filtered = generations.filter((g: any) => {
+   719→    const matchesSearch = !search || g.title?.toLowerCase().includes(search.toLowerCase()) || g.toolSlug?.toLowerCase().includes(search.toLowerCase())
+   720→    const matchesFilter = filter === 'all' || g.toolSlug?.includes(filter.toUpperCase())
+   721→    return matchesSearch && matchesFilter
+   722→  })
+   723→
+   724→  const FILTERS = ['all', 'image', 'course', 'email', 'blog', 'social', 'sales', 'script', 'landing']
+   725→
+   726→  return (
+   727→    <div className="space-y-4">
+   728→      <div className="flex items-center justify-between gap-3 flex-wrap">
+   729→        <h3 className="text-sm font-semibold">AI Generation History</h3>
+   730→        <div className="flex gap-2">
+   731→          <Select value={filter} onValueChange={setFilter}><SelectTrigger className="w-32 h-8 text-xs"><SelectValue /></SelectTrigger><SelectContent>{FILTERS.map(f => <SelectItem key={f} value={f} className="capitalize">{f === 'all' ? 'All Types' : f}</SelectItem>)}</SelectContent></Select>
+   732→          <div className="relative w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." className="pl-9 h-8 text-sm" /></div>
+   733→        </div>
+   734→      </div>
+   735→      {loading ? <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+   736→      : filtered.length === 0 ? <div className="p-12 text-center"><History className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-medium">No generations found</p><p className="text-xs text-muted-foreground mt-1">{search ? 'Try a different search.' : 'Your AI generations will appear here.'}</p></div>
+   737→      : <Card><CardContent className="p-0"><div className="divide-y">
+   738→          {filtered.map((g: any) => (
+   739→            <div key={g.id} className="flex items-center gap-3 p-4 hover:bg-muted/50 transition">
+   740→              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0"><FileText className="h-4 w-4" /></div>
+   741→              <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{g.title}</p><p className="text-xs text-muted-foreground">{g.toolSlug} · {timeAgo(g.createdAt)}</p></div>
+   742→              <Badge variant="secondary" className="text-[10px]">{g.creditsUsed}cr</Badge>
+   743→              <Badge variant="outline" className="text-[10px]">{g.status}</Badge>
+   744→              <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7"><ChevronDown className="h-3.5 w-3.5" /></Button></DropdownMenuTrigger>
+   745→                <DropdownMenuContent align="end" className="w-40">
+   746→                  <DropdownMenuItem onClick={() => toast.info('Duplicated')}><Copy className="h-3.5 w-3.5 mr-2" /> Duplicate</DropdownMenuItem>
+   747→                  <DropdownMenuItem onClick={() => toast.info('Restored')}><RotateCcw className="h-3.5 w-3.5 mr-2" /> Restore</DropdownMenuItem>
+   748→                  <DropdownMenuSeparator />
+   749→                  <DropdownMenuItem className="text-rose-600" onClick={() => toast.info('Deleted')}><Trash2 className="h-3.5 w-3.5 mr-2" /> Delete</DropdownMenuItem>
+   750→                </DropdownMenuContent>
+   751→              </DropdownMenu>
+   752→            </div>
+   753→          ))}
+   754→        </div></CardContent></Card>}
+   755→    </div>
+   756→  )
+   757→}
+   758→
+   759→// ─── Settings Tab — Creator-only (no model/provider info) ────────────────────
+   760→
+   761→function SettingsTab() {
+   762→  const [brandName, setBrandName] = useState('')
+   763→  const [brandDesc, setBrandDesc] = useState('')
+   764→  const [targetAudience, setTargetAudience] = useState('')
+   765→  const [writingStyle, setWritingStyle] = useState('professional')
+   766→  const [language, setLanguage] = useState('English')
+   767→  const [tone, setTone] = useState('friendly')
+   768→  const [defaultRatio, setDefaultRatio] = useState('1:1')
+   769→  const [creativity, setCreativity] = useState(70)
+   770→  const [autoSave, setAutoSave] = useState(true)
+   771→  const [saving, setSaving] = useState(false)
+   772→
+   773→  const save = () => {
+   774→    setSaving(true)
+   775→    setTimeout(() => { setSaving(false); toast.success('AI settings saved') }, 800)
+   776→  }
+   777→
+   778→  return (
+   779→    <div className="space-y-4 max-w-2xl">
+   780→      <Card>
+   781→        <CardHeader><CardTitle className="text-base flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /> AI Workspace Settings</CardTitle></CardHeader>
+   782→        <CardContent className="space-y-4">
+   783→          {/* Brand Profile */}
+   784→          <div className="space-y-3">
+   785→            <p className="text-sm font-semibold flex items-center gap-1.5"><Palette className="h-3.5 w-3.5 text-primary" /> Brand Profile</p>
+   786→            <div className="grid grid-cols-2 gap-3">
+   787→              <div><Label className="text-xs">Business Name</Label><Input value={brandName} onChange={(e) => setBrandName(e.target.value)} placeholder="Your brand name" className="mt-1 text-sm" /></div>
+   788→              <div><Label className="text-xs">Target Audience</Label><Input value={targetAudience} onChange={(e) => setTargetAudience(e.target.value)} placeholder="e.g. Course creators" className="mt-1 text-sm" /></div>
+   789→            </div>
+   790→            <div><Label className="text-xs">Business Description</Label><Textarea value={brandDesc} onChange={(e) => setBrandDesc(e.target.value)} placeholder="What does your business do?" rows={2} className="mt-1 text-sm" /></div>
+   791→          </div>
+   792→
+   793→          <div className="h-px bg-border" />
+   794→
+   795→          {/* Writing Style */}
+   796→          <div className="space-y-3">
+   797→            <p className="text-sm font-semibold flex items-center gap-1.5"><Type className="h-3.5 w-3.5 text-primary" /> Writing Style</p>
+   798→            <div className="grid grid-cols-2 gap-3">
+   799→              <div><Label className="text-xs">Default Language</Label><select value={language} onChange={(e) => setLanguage(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"><option>English</option><option>Spanish</option><option>French</option><option>German</option><option>Portuguese</option></select></div>
+   800→              <div><Label className="text-xs">Tone</Label><select value={tone} onChange={(e) => setTone(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"><option value="friendly">Friendly</option><option value="professional">Professional</option><option value="casual">Casual</option><option value="authoritative">Authoritative</option><option value="playful">Playful</option></select></div>
+   801→            </div>
+   802→            <div><Label className="text-xs">Writing Style</Label><select value={writingStyle} onChange={(e) => setWritingStyle(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"><option value="professional">Professional</option><option value="conversational">Conversational</option><option value="technical">Technical</option><option value="creative">Creative</option><option value="minimalist">Minimalist</option></select></div>
+   803→          </div>
+   804→
+   805→          <div className="h-px bg-border" />
+   806→
+   807→          {/* Image Settings */}
+   808→          <div className="space-y-3">
+   809→            <p className="text-sm font-semibold flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5 text-primary" /> Image Defaults</p>
+   810→            <div className="grid grid-cols-2 gap-3">
+   811→              <div><Label className="text-xs">Default Aspect Ratio</Label><select value={defaultRatio} onChange={(e) => setDefaultRatio(e.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-sm"><option value="1:1">Square (1:1)</option><option value="16:9">Wide (16:9)</option><option value="9:16">Tall (9:16)</option><option value="4:3">Classic (4:3)</option></select></div>
+   812→              <div><Label className="text-xs">Creativity: {creativity}%</Label><input type="range" min={0} max={100} value={creativity} onChange={(e) => setCreativity(Number(e.target.value))} className="mt-3 w-full" /></div>
+   813→            </div>
+   814→          </div>
+   815→
+   816→          <div className="h-px bg-border" />
+   817→
+   818→          {/* Preferences */}
+   819→          <div className="space-y-2">
+   820→            <p className="text-sm font-semibold flex items-center gap-1.5"><Target className="h-3.5 w-3.5 text-primary" /> Preferences</p>
+   821→            <label className="flex items-center justify-between cursor-pointer">
+   822→              <span className="text-sm">Auto-save generations to History</span>
+   823→              <input type="checkbox" checked={autoSave} onChange={(e) => setAutoSave(e.target.checked)} className="h-4 w-4 rounded" />
+   824→            </label>
+   825→          </div>
+   826→
+   827→          <Button onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Check className="h-4 w-4 mr-1.5" />}Save Settings</Button>
+   828→        </CardContent>
+   829→      </Card>
+   830→    </div>
+   831→  )
+   832→}
+   833→

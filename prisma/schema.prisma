@@ -584,26 +584,55 @@ model CreditTransaction {
 // ===== AI Platform (database-driven, admin-managed) =====
 
 model AiProvider {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  slug        String   @unique
-  apiKey      String   @default("")
-  baseUrl     String   @default("")
-  isActive    Boolean  @default(true)
-  priority    Int      @default(10)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  models      AiModel[]
+  id              String   @id @default(cuid())
+  name            String   @unique
+  slug            String   @unique
+  // Capabilities — what this provider can do (TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS)
+  capabilities    String   @default("TEXT") // comma-separated
+  apiKey          String   @default("")
+  baseUrl         String   @default("")
+  webhookSecret   String   @default("")
+  isActive        Boolean  @default(true)
+  isHealthy       Boolean  @default(true)
+  priority        Int      @default(10)
+  // Budgets (USD cents)
+  dailyBudget     Float    @default(100)
+  monthlyBudget   Float    @default(2000)
+  // Limits
+  dailyRequests   Int      @default(10000)
+  monthlyRequests Int      @default(300000)
+  timeout         Int      @default(60)
+  retries         Int      @default(2)
+  concurrency     Int      @default(5)
+  fallbackProviderId String?
+  // Metadata
+  description     String   @default("")
+  docsUrl         String   @default("")
+  lastHealthCheck DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  // Relations
+  models          AiModel[]
+  keys            AiProviderKey[]
+  routes          AiRoute[] @relation("RouteProvider")
+  fallbackRoutes  AiRoute[] @relation("RouteFallback")
+  jobs            AiJob[]
+  logs            AiLog[]
+  costs           AiCost[]
+  webhooks        AiWebhook[]
 }
 
 model AiModel {
   id           String   @id @default(cuid())
   providerId   String
-  name         String   // internal id
-  displayName  String
+  name         String   // internal id (e.g. deepseek/deepseek-chat)
+  displayName  String   // what shows in admin (creators never see this)
+  modality     String   @default("TEXT") // TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS
   contextWindow Int     @default(128000)
   isDefault    Boolean  @default(false)
   costMultiplier Float  @default(1.0)
+  inputCostPer1k  Float @default(0)   // USD per 1k input tokens (admin only)
+  outputCostPer1k Float @default(0)   // USD per 1k output tokens (admin only)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @default(now()) @updatedAt
@@ -614,19 +643,57 @@ model AiModel {
   @@unique([providerId, name])
 }
 
+model AiProviderKey {
+  id          String   @id @default(cuid())
+  providerId  String
+  label       String   @default("Primary") // human label
+  keyValue    String   // the actual secret (masked in API responses)
+  maskedValue String   @default("") // e.g. sk-...XXXX
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  lastRotatedAt DateTime?
+  rotatedFrom String?  @default("") // previous masked value, audit trail
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  provider    AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId])
+}
+
+// Routing — maps an AI tool category to a provider + model.
+// Creators never see this — Super Admin configures it.
+model AiRoute {
+  id                String   @id @default(cuid())
+  toolCategory      String   @unique // WRITING | MARKETING | COURSE | WEBSITE | SEO | EMAIL | BLOG | CRM | AUTOMATION | IMAGE | VIDEO | VOICE | STT | EMBEDDING
+  providerId        String
+  fallbackProviderId String?
+  modelId           String?  // specific model override (null = provider default)
+  strategy          String   @default("smart") // smart | cost | quality | round_robin
+  weight            Int      @default(100)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  provider          AiProvider @relation("RouteProvider", fields: [providerId], references: [id], onDelete: Cascade)
+  fallbackProvider  AiProvider? @relation("RouteFallback", fields: [fallbackProviderId], references: [id], onDelete: SetNull)
+}
+
 model AiTool {
   id           String   @id @default(cuid())
   slug         String   @unique // COURSE_GENERATOR | EMAIL_WRITER | ...
   name         String
   description  String
   icon         String   @default("Sparkles")
-  category     String   @default("Content") // Content | Courses | Marketing | Sales | Strategy
+  category     String   @default("Content") // Content | Courses | Marketing | Sales | Strategy | Image | Video | Voice
+  // Routing — every tool maps to a route category so Super Admin can change providers without code changes
+  routeCategory String  @default("WRITING") // WRITING | MARKETING | COURSE | WEBSITE | SEO | EMAIL | BLOG | CRM | AUTOMATION | IMAGE | VIDEO | VOICE | STT | EMBEDDING
   systemPrompt String   @default("")
   userInputPrompt String @default("") // template injected with user input
   creditCost   Int      @default(5)
   temperature  Float    @default(0.7)
   maxTokens    Int      @default(4000)
-  outputType   String   @default("MARKDOWN") // MARKDOWN | COURSE | LESSON | EMAIL | SALES_PAGE | BLOG | SOCIAL | SCRIPT | PRODUCT | LANDING
+  outputType   String   @default("MARKDOWN") // MARKDOWN | COURSE | LESSON | EMAIL | SALES_PAGE | BLOG | SOCIAL | SCRIPT | PRODUCT | LANDING | IMAGE | VIDEO
   isVisible    Boolean  @default(true)
   isPro        Boolean  @default(false)
   outputSchema String   @default("") // JSON schema hint for structured outputs
@@ -638,21 +705,297 @@ model AiTool {
 model AiGeneration {
   id           String   @id @default(cuid())
   userId       String
+  workspaceId  String   @default("default")
   toolId       String
   toolSlug     String
+  routeCategory String  @default("WRITING")
+  providerSlug String   @default("") // which provider actually served this (admin-only)
+  modelId      String   @default("") // which model served this (admin-only)
+  jobId        String?  // link to async AiJob if generated through queue
+  assetId      String?  // link to saved AiAsset (null if not yet saved)
   title        String
   input        String   @default("") // user prompt
-  output       String   @default("") // raw AI text
+  output       String   @default("") // raw AI text or asset URL
   structured   String   @default("{}") // JSON structured output (course obj, etc.)
-  status       String   @default("COMPLETED") // PENDING | COMPLETED | FAILED
+  status       String   @default("COMPLETED") // PENDING | COMPLETED | FAILED | CANCELLED
+  errorMessage String   @default("")
   creditsUsed  Int      @default(0)
+  costUsd      Float    @default(0) // actual provider cost in USD
+  durationMs   Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  metadata     String   @default("{}") // prompt params, style, ratio, etc.
   createdAt    DateTime @default(now())
+  completedAt  DateTime?
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   tool         AiTool   @relation(fields: [toolId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([toolId])
+  @@index([workspaceId, createdAt])
+  @@index([routeCategory])
+  @@index([status])
+}
+
+// ===== AI Jobs — async queue for image/video/avatar generation (Fal AI style) =====
+model AiJob {
+  id           String   @id @default(cuid())
+  workspaceId  String   @default("default")
+  userId       String
+  providerId   String
+  providerSlug String   @default("")
+  // Job payload
+  type         String   // IMAGE_GEN | VIDEO_GEN | IMAGE_UPSCALE | BG_REMOVE | IMAGE_VARIATION | FACE_SWAP | AVATAR_GEN | VIDEO_UPSCALE
+  prompt       String   @default("")
+  params       String   @default("{}") // style, ratio, duration, resolution, seed, etc.
+  // External
+  externalId   String?  // provider's job id (Fal AI request_id)
+  externalUrl  String   @default("") // webhook URL or result URL
+  // State
+  status       String   @default("QUEUED") // QUEUED | RENDERING | PROCESSING | COMPLETED | FAILED | CANCELLED
+  progress     Int      @default(0) // 0-100
+  errorMessage String   @default("")
+  // Output
+  resultUrl    String   @default("")
+  resultMeta   String   @default("{}") // width, height, duration, etc.
+  // Cost
+  creditsUsed  Int      @default(0)
+  costUsd      Float    @default(0)
+  // Audit
+  createdAt    DateTime @default(now())
+  startedAt    DateTime?
+  completedAt  DateTime?
+  updatedAt    DateTime @updatedAt
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([externalId])
+}
+
+// ===== AI Assets — every generated output becomes a reusable asset =====
+model AiAsset {
+  id           String   @id @default(cuid())
+  workspaceId  String   @default("default")
+  userId       String
+  generationId String?  // link back to AiGeneration (nullable for uploaded assets)
+  // Categorization
+  type         String   // IMAGE | VIDEO | AUDIO | DOCUMENT | TEMPLATE | LOGO | ICON
+  folder       String   @default("AI Images") // AI Images | AI Videos | AI Logos | AI Icons | AI Audio | AI Documents | AI Templates
+  name         String
+  description  String   @default("")
+  // Storage
+  url          String   // public URL
+  thumbnailUrl String   @default("")
+  fileSize     Int      @default(0) // bytes
+  mimeType     String   @default("")
+  width        Int      @default(0)
+  height       Int      @default(0)
+  duration     Int      @default(0) // seconds, for video/audio
+  // Metadata
+  prompt       String   @default("") // original prompt
+  style        String   @default("")
+  aspectRatio  String   @default("")
+  tags         String   @default("[]") // JSON array
+  // Creator state
+  isFavorite   Boolean  @default(false)
+  isUsed       Boolean  @default(false) // has been used in any module
+  usedIn       String   @default("[]") // JSON array of {module, entityId}
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, type])
+  @@index([workspaceId, folder])
+  @@index([userId, createdAt])
+  @@index([isFavorite])
+}
+
+// ===== AI Brand Profiles — creator brand voice (no provider/model info) =====
+model AiBrandProfile {
+  id           String   @id @default(cuid())
+  workspaceId  String   @unique
+  brandVoice   String   @default("professional") // professional | casual | witty | authoritative | friendly | inspirational
+  tone         String   @default("confident") // confident | warm | playful | serious | energetic | calm
+  language     String   @default("en") // ISO code
+  primaryColor String   @default("#10b981")
+  secondaryColor String @default("#0ea5e9")
+  logoUrl      String   @default("")
+  defaultAspectRatio String @default("1:1")
+  // Brand guidelines (free text)
+  guidelines   String   @default("")
+  // Audience
+  targetAudience String @default("")
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ===== AI Projects — group assets/generations by project =====
+model AiProject {
+  id           String   @id @default(cuid())
+  workspaceId  String   @default("default")
+  userId       String
+  name         String
+  description  String   @default("")
+  color        String   @default("#10b981")
+  status       String   @default("ACTIVE") // ACTIVE | ARCHIVED | COMPLETED
+  assetCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([workspaceId, status])
+  @@index([userId, createdAt])
+}
+
+// ===== AI Usage — aggregate per workspace/user/tool/day for analytics & cost control =====
+model AiUsage {
+  id           String   @id @default(cuid())
+  workspaceId  String   @default("default")
+  userId       String
+  toolSlug     String
+  routeCategory String
+  providerSlug String
+  // Day bucket
+  day          DateTime
+  // Counts
+  requests     Int      @default(0)
+  creditsUsed  Int      @default(0)
+  costUsd      Float    @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  durationMs   Int      @default(0)
+  failures     Int      @default(0)
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([workspaceId, userId, toolSlug, day])
+  @@index([workspaceId, day])
+  @@index([userId, day])
+}
+
+// ===== AI Logs — every request (admin-only audit trail) =====
+model AiLog {
+  id           String   @id @default(cuid())
+  workspaceId  String   @default("default")
+  userId       String
+  providerId   String
+  providerSlug String
+  modelId      String   @default("")
+  toolSlug     String   @default("")
+  routeCategory String  @default("")
+  // Request
+  requestType  String   // CHAT | GENERATE | IMAGE | VIDEO | EMBEDDING | STT | TTS
+  inputPreview String   @default("") // first 500 chars (sanitized)
+  // Response
+  status       String   @default("OK") // OK | ERROR | TIMEOUT | RATE_LIMITED | QUOTA_EXCEEDED
+  errorCode    String   @default("")
+  errorMessage String   @default("")
+  // Performance
+  durationMs   Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  // Cost
+  creditsUsed  Int      @default(0)
+  costUsd      Float    @default(0)
+  // Audit
+  ip           String   @default("")
+  userAgent    String   @default("")
+  createdAt    DateTime @default(now())
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([providerId, createdAt])
+  @@index([status, createdAt])
+}
+
+// ===== AI Costs — daily cost aggregation per provider =====
+model AiCost {
+  id           String   @id @default(cuid())
+  providerId   String
+  day          DateTime
+  // Cost breakdown
+  totalCostUsd Float    @default(0)
+  totalCredits Int      @default(0)
+  requests     Int      @default(0)
+  failures     Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  // Budget tracking
+  budgetExceeded Boolean @default(false)
+  autoDisabled  Boolean @default(false)
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, day])
+  @@index([day])
+}
+
+// ===== AI Storage — track storage usage per workspace =====
+model AiStorage {
+  id           String   @id @default(cuid())
+  workspaceId  String   @unique
+  // Bytes (BigInt — SQLite INT is 32-bit, max ~2GB; we need to track >5GB)
+  imagesBytes  BigInt   @default(0)
+  videosBytes  BigInt   @default(0)
+  audioBytes   BigInt   @default(0)
+  documentsBytes BigInt @default(0)
+  totalBytes   BigInt   @default(0)
+  // Limits (bytes) — 5 GB default
+  quotaBytes   BigInt   @default(5368709120)
+  // Counts
+  assetCount   Int      @default(0)
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ===== AI Webhooks — incoming webhook log for async providers =====
+model AiWebhook {
+  id           String   @id @default(cuid())
+  providerId   String
+  externalId   String   @default("") // provider's job id
+  event        String   @default("") // e.g. generation.completed, generation.failed
+  payload      String   @default("{}") // raw JSON
+  processed    Boolean  @default(false)
+  processedAt  DateTime?
+  errorMessage String   @default("")
+  receivedAt   DateTime @default(now())
+
+  provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@index([providerId, receivedAt])
+  @@index([externalId])
+  @@index([processed])
+}
+
+// ===== AI Rate Limits — per-user/workspace request rate tracking =====
+model AiRateLimit {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  userId       String
+  routeCategory String
+  // Sliding window: minute + hour buckets
+  minuteWindow DateTime
+  hourWindow   DateTime
+  requests     Int      @default(0)
+  // Config (cached here for fast lookup)
+  maxPerMinute Int      @default(60)
+  maxPerHour   Int      @default(600)
+  // Audit
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([workspaceId, userId, routeCategory, minuteWindow])
+  @@index([workspaceId, hourWindow])
 }
 
 model FeatureFlag {

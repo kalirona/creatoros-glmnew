@@ -1,0 +1,302 @@
+   400→  * Customers: Stats + customer list with LTV, orders, status, search
+   401→  * Coupons: Coupon cards with code, discount, uses, expiry, status
+   402→  * Reports: Revenue by Product with progress bars
+   403→
+   404→Browser-Verified:
+   405→- Sidebar shows: Courses, Digital Products, Store, Memberships, Certificates, Media Library ✅
+   406→- Digital Products: product cards with Edit buttons, dropdown menu ✅
+   407→- Product Editor: 5 tabs (General, Media, Downloads, Pricing, SEO) ✅
+   408→- Store: 6 tabs (Overview, Catalog, Orders, Customers, Coupons, Reports) ✅
+   409→- Certificates: 3 template cards ✅
+   410→- Media Library: stats + file grid ✅
+   411→- Zero console errors ✅
+   412→- Zero page errors ✅
+   413→
+   414→Stage Summary:
+   415→- Lint: 0 errors
+   416→- TypeScript: 0 errors
+   417→- Dev server: HTTP 200
+   418→- Clear separation: Digital Products = BUILD, Store = SELL
+   419→- No duplicate functionality between modules
+   420→
+   421→---
+   422→Task ID: PHASE-11.3-CREATE-SELL-AUDIT
+   423→Agent: Main (Create & Sell Section Audit)
+   424→Task: Complete audit of all 6 Create & Sell modules for duplicated functionality
+   425→
+   426→Work Log:
+   427→- Audited all 6 modules for duplicated features:
+   428→  * Courses: grep found 9 matches — all are CSS "border" class names, no actual order/checkout/coupon functionality ✅
+   429→  * Digital Products: grep found 8 matches — all are CSS "border" class names + "customers" in description text, no order/customer management ✅
+   430→  * Store: 0 product editing (no onChange for description/price/coverUrl/fileUrl) ✅
+   431→  * Memberships: 0 order/checkout/coupon references ✅
+   432→  * Certificates: 1 match = CSS "border-t" class, no course management ✅
+   433→  * Media Library: 1 match = "lesson-video.mp4" file name, no editing functionality ✅
+   434→- Verified Store Catalog tab only has merchandising actions (Feature, Hide/Show, Reorder) — no product editing
+   435→- Verified Digital Products has no orders/customers/checkout
+   436→- Verified Courses has no orders/checkout/coupons
+   437→- Verified Memberships only references courses/products as plan benefits (correct behavior)
+   438→- Verified Certificates only references course names (correct — certificates are issued for courses)
+   439→- Verified Media Library has no product/course editing
+   440→
+   441→Browser-Verified:
+   442→- All 6 modules load with correct titles ✅
+   443→- Zero console errors ✅
+   444→- Zero page errors ✅
+   445→- Zero duplicated functionality ✅
+   446→
+   447→Stage Summary:
+   448→- Lint: 0 errors
+   449→- TypeScript: 0 errors
+   450→- Dev server: HTTP 200
+   451→- 6 modules with clear, non-overlapping responsibilities
+   452→- Zero duplicated buttons, editors, analytics, or settings
+   453→
+   454→---
+   455→Task ID: 3a
+   456→Agent: Backend Agent A (Community Spaces + Events + RSVP API)
+   457→Task: Build community Spaces + Events + RSVP API routes for CreatorOS (Next.js 16 + Prisma + SQLite)
+   458→
+   459→Work Log:
+   460→- Read worklog.md (prior work: Task 1 + Phase 11 audits) and src/lib/community.ts to understand helpers (getContext, writeAuditLog, sanitizeString, slugify, paginate, safeJsonParse) and ResolvedContext shape.
+   461→- Inspected prisma/schema.prisma for CommunitySpace, CommunityEvent, EventRSVP, CommunityPost, and User models. Confirmed fields: CommunitySpace (workspaceId, name, slug, description, icon, color, visibility, memberCount, postCount, status, @@unique([workspaceId, slug])), CommunityEvent (workspaceId, spaceId?, userId, title, description, type, location?, meetingUrl?, startTime, endTime?, bannerUrl?, maxAttendees?, status), EventRSVP (@@unique([eventId, userId])).
+   462→- Confirmed Next.js 16 conventions by inspecting eslint.config.mjs (very lenient — no-explicit-any off) and existing route patterns at src/app/api/data/community/route.ts.
+   463→- Created 4 new API route files under src/app/api/community/:
+   464→
+   465→  1. spaces/route.ts — GET (list ACTIVE spaces, ordered createdAt asc, returns {spaces:[...]}); POST (create with body {name, description?, visibility?}; generates unique slug = slugify(name) + '-' + Date.now().toString(36); writes SPACE_CREATE audit log; returns {success:true, space:{id,name,slug}}).
+   466→
+   467→  2. spaces/[spaceId]/route.ts — GET (single space + last 20 posts with author info, workspace-scoped via findFirst); PATCH (body {name?, description?, visibility?}; validates enum; writes SPACE_UPDATE audit log with before/after diff); DELETE (archives by setting status=ARCHIVED, NOT hard-delete; writes SPACE_ARCHIVE audit log). All routes await params (Next.js 16 Promise params).
+   468→
+   469→  3. events/route.ts — GET (all non-CANCELLED events, ordered startTime asc; includes _count.rsvps and current user's RSVP status as myRSVP via filtered include on rsvps); POST (body {title, description?, type?, location?, meetingUrl?, startTime, endTime?, spaceId?, maxAttendees?}; validates startTime is parseable date; validates endTime > startTime; validates type enum; validates spaceId belongs to same workspace; writes EVENT_CREATE audit log; returns {success:true, event:{id}}); DELETE (?id={eventId}; sets status=CANCELLED preserving RSVPs; writes EVENT_CANCEL audit log).
+   470→
+   471→  4. events/rsvp/route.ts — POST (body {eventId, status:'GOING'|'MAYBE'|'NOT_GOING'}); upserts EventRSVP on unique [eventId, userId]; verifies event belongs to ctx.workspaceId; blocks RSVP on CANCELLED events; enforces maxAttendees cap for GOING (409 conflict when full); writes EVENT_RSVP audit log; returns {success:true, status}.
+   472→
+   473→- Critical requirements verified:
+   474→  * `export const dynamic = 'force-dynamic'` at top of every file ✅
+   475→  * NextRequest/NextResponse from 'next/server' ✅
+   476→  * Next.js 16 params typed as Promise<{spaceId:string}> and awaited ✅
+   477→  * try/catch with console.error + generic 500 (no internal leak) ✅
+   478→  * All queries workspace-scoped via ctx.workspaceId ✅
+   479→  * 401 if getContext() null, 400 bad request, 404 not found, 500 server error (409 for capacity) ✅
+   480→  * Did NOT modify schema, community.ts, or write frontend code ✅
+   481→
+   482→- Ran `bun run lint` — 0 errors (output: `$ eslint .`, no warnings/errors reported).
+   483→
+   484→Stage Summary:
+   485→- 4 new API route files created, all lint-clean
+   486→- Full audit-log coverage: SPACE_CREATE, SPACE_UPDATE, SPACE_ARCHIVE, EVENT_CREATE, EVENT_CANCEL, EVENT_RSVP
+   487→- Workspace isolation enforced on every read/write (findFirst with workspaceId or where.workspaceId)
+   488→- Safe JSON body parsing with explicit 400 on invalid JSON
+   489→- Capacity enforcement + cancellation guard on RSVP for production realism
+   490→- Next.js 16 dynamic params properly typed as Promise and awaited
+   491→
+   492→---
+   493→Task ID: 3b
+   494→Agent: Backend Agent B (Community Posts + Comments + Reactions + Pin/Lock/Archive API)
+   495→Task: Build community Posts + Comments + Reactions + Pin/Lock/Archive API routes for CreatorOS (Next.js 16 + Prisma + SQLite)
+   496→
+   497→Work Log:
+   498→- Read worklog.md (prior work: Task 1, Task 10, Task 3, Phase 11 series, Task 3a by Backend Agent A) and src/lib/community.ts to confirm helpers (getContext, writeAuditLog, sendNotification, canModerate, sanitizeString, paginate, safeJsonParse) and ResolvedContext shape {user:{id,email,name,avatarUrl,role,credits}, workspaceId, workspaceRole, memberId}.
+   499→- Inspected prisma/schema.prisma for CommunityPost (id, workspaceId, spaceId?, userId, category, postType, title, content, likesCount, commentsCount, isPinned, isLocked, isArchived, isEdited, editCount, hashtags/mentions/pollOptions/attachments JSON, reactions JSON, timestamps + relations user/space/comments/history), CommunityComment (self-relation "CommentReplies" via parentId → parent/replies), PostHistory (postId, editedBy, title, content, version, createdAt — no User FK), CommunitySpace (postCount), WorkspaceMember (postsCount, commentsCount), ModerationReport (targetType, targetId, reason enum, description, status), Notification (type set includes REACTION|COMMENT|REPLY).
+   500→- Verified Next.js 16 conventions via Task 3a precedent (params: Promise<…>, await params; `export const dynamic = 'force-dynamic'`).
+   501→
+   502→- Created 10 new API route files under src/app/api/community/posts/:
+   503→
+   504→  1. posts/route.ts — GET (paginated feed) + POST (create).
+   505→     * GET query: ?page=&pageSize=&spaceId=&category=&postType=&search=&sort=recent|top|pinned&includeArchived=true. Workspace-scoped where; excludes archived unless includeArchived=true. sort=recent → createdAt desc; sort=top → likesCount desc; sort=pinned → [{isPinned:desc},{createdAt:desc}]. Returns {posts:[…], total, page, pageSize, totalPages}. Each post is serialized with parsed JSON (hashtags/mentions/pollOptions/attachments/reactions) + author{id,name,avatarUrl} + space{id,name}|null.
+   506→     * POST body: {title, content, category?, postType?, spaceId?, attachments?, pollOptions?, mentions?, hashtags?}. Validates title (1-200) + content (1-50000). postType enum-checked. If spaceId provided, validates space exists in workspace (ACTIVE). Auto-extracts hashtags from content via /#(\w+)/g, lowercased, merged with user-supplied (deduped). Creates post with JSON.stringify on all JSON fields. Increments WorkspaceMember.postsCount + (if spaceId) CommunitySpace.postCount in $transaction. Writes POST_CREATE audit log. Returns {success:true, post:{id}}.
+   507→
+   508→  2. posts/[postId]/route.ts — GET (single with comments) + PATCH (edit) + DELETE.
+   509→     * GET: returns full post with parsed JSON + author/space + top-level comments (parentId=null) with 3 levels of nested replies (4-level Prisma include chain), each comment with author info.
+   510→     * PATCH: body {title?, content?, category?, attachments?}. Author-or-moderator gate (canModerate). Saves CURRENT state to PostHistory (version=editCount+1) BEFORE updating; sets isEdited=true, increments editCount; writes POST_EDIT audit log with before/after diff + version.
+   511→     * DELETE: author-or-moderator. Cascade delete of comments+history via Prisma onDelete:Cascade. Decrements WorkspaceMember.postsCount (via updateMany on userId+workspaceId) + (if spaceId) CommunitySpace.postCount in $transaction. Writes POST_DELETE audit log.
+   512→
+   513→  3. posts/[postId]/react/route.ts — POST (toggle).
+   514→     * Body {type: LIKE|LOVE|HAHA|WOW|SAD|ANGRY} (enum-validated). Reactions stored as {TYPE:{count,users:[userId,…]}} JSON. Iterates all reaction types, removes user from any prior reaction; if the removed type matches the new type, returns reacted:false (toggle-off). Otherwise adds the new reaction (switch or fresh). Sends REACTION notification to post author (skip if self). Returns {success:true, reactions, reacted:boolean}.
+   515→
+   516→  4. posts/[postId]/pin/route.ts — POST toggle. Moderator-only (canModerate). Toggles isPinned; writes POST_PIN or POST_UNPIN audit. Returns {success, isPinned}.
+   517→  5. posts/[postId]/lock/route.ts — POST toggle. Moderator-only. Toggles isLocked; writes POST_LOCK/POST_UNLOCK. Returns {success, isLocked}.
+   518→  6. posts/[postId]/archive/route.ts — POST toggle. Moderator-only. Toggles isArchived; writes POST_ARCHIVE/POST_RESTORE. Returns {success, isArchived}.
+   519→
+   520→  7. posts/[postId]/history/route.ts — GET. Returns array of PostHistory (newest first) with editor info {id, name, avatarUrl}. Since PostHistory has no User FK, resolves editors via a separate db.user.findMany by editedBy IDs and builds an editorMap.
+   521→
+   522→  8. posts/[postId]/comments/route.ts — GET (paginated top-level + nested replies) + POST (create comment/reply).
+   523→     * GET query: ?page=1&pageSize=50. Returns top-level comments (parentId=null) with replies nested up to 3 levels deep via a shared NESTED_REPLIES_INCLUDE Prisma include chain; recursive serializeComment produces nested {replies:[…]} structure. Each comment carries author{id,name,avatarUrl} + parsed mentions/attachments JSON.
+   524→     * POST body: {content, parentId?, attachments?, mentions?}. Validates content. If post archived → 400. If post locked and !moderator → 403. If parentId provided, validates parent belongs to same post (404 otherwise). Creates comment, increments post.commentsCount + author's WorkspaceMember.commentsCount in $transaction. Sends COMMENT notification to post author (skip if self) + REPLY notification to parent comment author (skip if self or no parent). Writes COMMENT_CREATE audit log. Returns {success:true, comment:{id}}.
+   525→
+   526→  9. posts/[postId]/comments/[commentId]/route.ts — PATCH (edit) + DELETE.
+   527→     * PATCH body {content}. Author-only (403 otherwise). Sets isEdited=true. Writes COMMENT_EDIT audit log. Returns updated comment with parsed JSON.
+   528→     * DELETE: author-or-moderator. Counts descendants via BFS (parentId chain) within the post. Cascade delete (replies handled by onDelete:Cascade). Decrements post.commentsCount by (1+descendantCount) + author's WorkspaceMember.commentsCount by 1 in $transaction. Writes COMMENT_DELETE audit log with removedTotal.
+   529→
+   530→  10. posts/[postId]/report/route.ts — POST. Body {reason, description?}. Validates reason ∈ {SPAM, HARASSMENT, HATE_SPEECH, VIOLENCE, NSFW, OTHER}. Creates ModerationReport with targetType='POST', targetId=postId, status='PENDING'. Writes POST_REPORT audit log. Returns {success:true, report:{id}}.
+   531→
+   532→- Critical requirements verified:
+   533→  * `export const dynamic = 'force-dynamic'` at top of every file ✅
+   534→  * NextRequest/NextResponse from 'next/server' ✅
+   535→  * Next.js 16 params typed as Promise<{postId:string}> / Promise<{postId,commentId}> and awaited ✅
+   536→  * try/catch with console.error + generic 500 (no internal leak) ✅
+   537→  * All queries workspace-scoped via ctx.workspaceId (findFirst with workspaceId or where.workspaceId) ✅
+   538→  * 401 if getContext() null, 400 bad request, 403 forbidden, 404 not found, 500 server error ✅
+   539→  * JSON fields: safeJsonParse for reading, JSON.stringify for writing ✅
+   540→  * Did NOT modify schema, community.ts, or write frontend code ✅
+   541→  * No `bun run build` ✅
+   542→
+   543→- Ran `bun run lint` — 0 errors (output: `$ eslint .`, no warnings/errors reported).
+   544→- Ran `bunx tsc --noEmit` against the project — zero errors in any new src/app/api/community/posts/* files (only pre-existing errors in examples/, prisma/seed-ai-platform.ts, and skills/ — unrelated to this task).
+   545→
+   546→Stage Summary:
+   547→- 10 new API route files created under src/app/api/community/posts/, all lint-clean and tsc-clean
+   548→- Full audit-log coverage: POST_CREATE, POST_EDIT, POST_DELETE, POST_PIN, POST_UNPIN, POST_LOCK, POST_UNLOCK, POST_ARCHIVE, POST_RESTORE, POST_REPORT, COMMENT_CREATE, COMMENT_EDIT, COMMENT_DELETE
+   549→- Notification fan-out: REACTION (to post author), COMMENT (to post author), REPLY (to parent comment author) — all with self-skip guards
+   550→- Workspace isolation enforced on every read/write
+   551→- JSON fields (hashtags, mentions, pollOptions, attachments, reactions) consistently serialized on write and parsed on read via safeJsonParse
+   552→- Hashtag auto-extraction from post content (#word → lowercase, deduped with user-supplied)
+   553→- Reaction toggle correctly handles toggle-off, switch-between-types, and fresh-add cases
+   554→- Comment delete decrements counters by (1 + recursive descendant count) so nested reply cascades don't desync counters
+   555→- Post edit snapshots prior title/content to PostHistory with monotonic version before applying edits
+   556→- 3-level nested replies (4 levels total: top-level + 3 deep) on both single-post GET and comments-list GET
+   557→- Locked-post comment guard restricts to moderators only; archived-post comment blocked entirely
+   558→- Author-or-moderator gating on POST PATCH/DELETE and COMMENT DELETE; author-only on COMMENT PATCH
+   559→- Moderator-only gating on pin/lock/archive toggles
+   560→
+   561→---
+   562→Task ID: 3c
+   563→Agent: Backend Agent C
+   564→Task: Build community Members + Invitations + Transfer Ownership API routes for CreatorOS
+   565→
+   566→Work Log:
+   567→- Read worklog.md + src/lib/community.ts (resolved `getContext`, `canManageMembers`, `canActOnMember`, `roleLevel`, `writeAuditLog`, `sendNotification`, `sanitizeString`, `isValidEmail`, `generateToken`, `paginate`, `safeJsonParse` exports) and reviewed existing community/posts/* route patterns for style consistency (NextRequest/NextResponse, params Promise<> with await, force-dynamic, try/catch + console.error + generic 500, safeJsonParse on JSON columns).
+   568→- Confirmed Prisma schema for WorkspaceMember (role/memberStatus/mutedUntil/suspendedUntil/bannedUntil/banReason/badges JSON/postsCount/commentsCount/likesReceived), User (name/email/avatarUrl/bio), Invitation (token @unique, status PENDING|ACCEPTED|EXPIRED|REVOKED, invitedBy/email/username/role/message/expiresAt/acceptedAt/revokedAt), MemberWarning (memberId/workspaceId/issuedBy/reason/severity/acknowledged), CommunityPost/CommunityComment (for member profile lookups), Notification (WARNING + SYSTEM types), AuditLog, Workspace (name/slug for invite-link endpoint).
+   569→- Created 8 new API route files under src/app/api/community/:
+   570→
+   571→  1. **members/route.ts** — GET paginated member list + DELETE remove member
+   572→     - GET: `?page=&pageSize=&search=&role=&status=&sort=joinedAt|lastSeenAt|postsCount|commentsCount|name&order=asc|desc`
+   573→       * Workspace-scoped; search hits User.name + User.email via `user: { OR: [...] }` relation filter
+   574→       * Returns `{ members, total, page, pageSize, totalPages }` with full member shape (id, userId, name, email, avatarUrl, bio, role, memberStatus, joinedAt, lastSeenAt, postsCount, commentsCount, likesReceived, parsed badges, mutedUntil, suspendedUntil, bannedUntil, banReason)
+   575→     - DELETE: `?id={memberId}` — requires canManageMembers + canActOnMember('remove'); rejects OWNER; deletes the row; writes MEMBER_REMOVE audit; sends SYSTEM notification to removed user.
+   576→
+   577→  2. **members/[memberId]/route.ts** — GET single profile + PATCH role/state
+   578→     - GET: full profile + recent posts (last 10) + recent comments (last 10) with comment→post title join
+   579→     - PATCH: body `{ role?, memberStatus?, until?, reason? }`
+   580→       * Role change: direction inferred via roleLevel comparison; canActOnMember('promote'|'demote'); refuses newRole==='OWNER' and target.role==='OWNER'; extra guard refuses promoting to actor's own level or above; writes MEMBER_PROMOTE / MEMBER_DEMOTE audit
+   581→       * memberStatus change (ACTIVE|SUSPENDED|BANNED|MUTED): validates via canActOnMember('ban'|'suspend'|'mute'); for ACTIVE uses canManageMembers (reactivation); sets mutedUntil/suspendedUntil/bannedUntil/banReason accordingly (clears unrelated fields); writes MEMBER_REACTIVATE / MEMBER_MUTE / MEMBER_SUSPEND / MEMBER_BAN audit; sends WARNING notification to the affected member with reason + until ISO stamp
+   582→       * Returns updated serialized member.
+   583→
+   584→  3. **members/export/route.ts** — GET CSV export
+   585→     - Same filters as list (`?role=&status=&search=`); requires canManageMembers
+   586→     - Streams CSV with header `name,email,role,status,joinedAt,lastSeenAt,posts,comments,likesReceived` and one row per member; standard RFC-4180 escaping (always quote, double-up embedded quotes)
+   587→     - Sets `Content-Type: text/csv; charset=utf-8` + `Content-Disposition: attachment; filename="members.csv"` + `Cache-Control: no-store`
+   588→     - Writes EXPORT_CSV audit log with count + filters metadata.
+   589→
+   590→  4. **members/[memberId]/warn/route.ts** — POST issue warning
+   591→     - Body `{ reason, severity? }` — reason sanitized (max 1000), severity validated against LOW|MEDIUM|WARNING|HIGH|CRITICAL (default WARNING)
+   592→     - Requires canManageMembers + canActOnMember('warn'); rejects OWNER target
+   593→     - Creates MemberWarning row; sends WARNING notification; writes MEMBER_WARN audit; returns warning record.
+   594→
+   595→  5. **transfer-ownership/route.ts** — POST transfer workspace ownership
+   596→     - Body `{ targetMemberId }`; requires `ctx.workspaceRole === 'OWNER'`
+   597→     - Refuses self-transfer and target already being OWNER
+   598→     - Atomically (db.$transaction): demote current owner → ADMIN, promote target → OWNER (auto-promotes past ADMIN if needed)
+   599→     - Sends SYSTEM notification to old owner, new owner, and ALL other workspace members in parallel
+   600→     - Writes OWNERSHIP_TRANSFER audit with from/to owner IDs + previous target role
+   601→     - Returns `{ success, newOwnerId, newOwnerMemberId }`.
+   602→
+   603→  6. **invitations/route.ts** — GET list + POST create + DELETE revoke
+   604→     - GET: `?status=&page=&pageSize=` — requires canManageMembers; resolves inviter {name, email} via batched User lookup; returns serialized invitations (incl. token) + pagination
+   605→     - POST: body `{ email?, username?, role, message?, expiresInHours? }`
+   606→       * Requires at least one of email/username; validates email via isValidEmail when provided
+   607→       * role must be in ADMIN|MANAGER|INSTRUCTOR|MODERATOR|MEMBER|STUDENT|AFFILIATE|GUEST (never OWNER)
+   608→       * Refuses inviting at/above actor's own level (roleLevel check) so only OWNER can invite ADMIN
+   609→       * Checks for existing PENDING invitation with same email in workspace → 409
+   610→       * Creates with generateToken(); expiresAt = now + expiresInHours (default 168h = 7 days, capped at 365 days)
+   611→       * Writes MEMBER_INVITE audit; returns created invitation including token.
+   612→     - DELETE: `?id={invitationId}` — requires canManageMembers; refuses non-PENDING; sets status=REVOKED + revokedAt + revokedBy; writes INVITATION_REVOKE audit.
+   613→
+   614→  7. **invitations/[invitationId]/resend/route.ts** — POST resend
+   615→     - Requires canManageMembers; refuses non-PENDING (400)
+   616→     - Refreshes expiresAt to now + 7 days; writes INVITATION_RESEND audit; returns `{ success, expiresAt }`.
+   617→
+   618→  8. **invitations/[invitationId]/link/route.ts** — GET invite link data
+   619→     - Requires canManageMembers; returns `{ inviteUrl: '/invite/{token}', token, expiresAt, role, status, workspace: {name, slug} }`.
+   620→
+   621→- Critical-requirements compliance:
+   622→  * `export const dynamic = 'force-dynamic'` on all 8 files ✅
+   623→  * `params: Promise<{memberId|invitationId: string}>` declared and `await`-ed ✅
+   624→  * try/catch + console.error + generic 500 on every handler ✅
+   625→  * Workspace-scoped reads/writes (every query filters by ctx.workspaceId) ✅
+   626→  * Status discipline: 401 (no ctx), 403 (permission), 404 (not found), 400 (validation), 409 (duplicate pending invite), 500 (catch) ✅
+   627→  * sanitizeString applied to all free-text inputs (reason, message, username) ✅
+   628→  * Did NOT modify schema, community.ts, or write any frontend code ✅
+   629→  * No `bun run build` ✅
+   630→
+   631→- Ran `cd /home/z/my-project && bun run lint 2>&1` — exit code 0, `$ eslint .` with zero errors and zero warnings across all 8 new files.
+   632→
+   633→Stage Summary:
+   634→- 8 new API route files created under src/app/api/community/ (members/, members/[memberId]/, members/export/, members/[memberId]/warn/, transfer-ownership/, invitations/, invitations/[invitationId]/resend/, invitations/[invitationId]/link/)
+   635→- All lint-clean (eslint exit 0, zero warnings)
+   636→- Full audit-log coverage: MEMBER_REMOVE, MEMBER_PROMOTE, MEMBER_DEMOTE, MEMBER_SUSPEND, MEMBER_BAN, MEMBER_MUTE, MEMBER_REACTIVATE, MEMBER_WARN, EXPORT_CSV, OWNERSHIP_TRANSFER, MEMBER_INVITE, INVITATION_REVOKE, INVITATION_RESEND
+   637→- Notification fan-out: SYSTEM on member remove + ownership transfer (both parties + all members), WARNING on member status change + member warn
+   638→- Permission model: OWNER-only transfer-ownership; canManageMembers gating for list/export/invite/revoke/resend/link; canActOnMember for promote/demote/remove/ban/suspend/mute/warn with role-level guards; extra guard preventing promotion to actor's own level
+   639→- Workspace isolation enforced on every query (filter by ctx.workspaceId)
+   640→- Date/until handling: accepts ISO string, validates with isNaN check, null = permanent
+   641→- CSV export follows RFC-4180 (always quote, double-up embedded quotes, CRLF line endings)
+   642→- Duplicate-pending-invitation detection returns 409 (workspace-scoped by email)
+   643→- Token generated via generateToken() (timestamp + 2 random segments) and persisted as @unique
+   644→- Default invite TTL = 168h (7 days), capped at 365 days; resend always resets to +7 days
+   645→- Member profile GET eager-loads recent 10 posts + 10 comments via Promise.all (comment query joins through post.workspaceId for workspace isolation)
+   646→
+   647→---
+   648→Task ID: 3d
+   649→Agent: Backend Agent D
+   650→Task: Build community Moderation + Notifications + Audit Log API routes for CreatorOS
+   651→
+   652→Work Log:
+   653→- Read worklog.md + src/lib/community.ts (confirmed exports: getContext, canModerate, canManageMembers, roleLevel, writeAuditLog, sendNotification, sanitizeString, isValidEmail, generateToken, paginate, safeJsonParse) and reviewed existing community/posts/* + members/* + invitations/* patterns for style consistency (force-dynamic, NextRequest/NextResponse, params Promise<> with await, try/catch + console.error + generic 500, safeJsonParse on JSON columns, batched user lookups via Map).
+   654→- Confirmed Prisma schema for ModerationReport (no relation fields — reporterId/resolvedBy are plain Strings, so users must be resolved via separate batched user queries), BannedKeyword (workspaceId, keyword, action BLOCK|REVIEW|REPLACE, replacement?, severity, createdBy?), AuditLog (workspaceId, actorId, actorRole?, action, targetType?, targetId?, metadata JSON string, ip?), Notification (userId, workspaceId, type, title, body, link, actorId?, entityId?, entityType?, read boolean), MemberWarning (memberId, workspaceId, issuedBy, reason, severity, acknowledged). Also confirmed CommunityPost / CommunityComment / CommunityEvent / WorkspaceMember shapes for target-preview lookups.
+   655→- Created 10 new API route files under src/app/api/community/:
+   656→
+   657→  1. **moderation/reports/route.ts** — GET (list) + POST (create report)
+   658→     - GET: `?page=&pageSize=&status=&targetType=&reason=` requires `canModerate(ctx.workspaceRole)`; returns `{ reports, total, page, pageSize, totalPages }` with each report carrying reporter {id,name,avatarUrl}, resolver {id,name,avatarUrl}|null, and `target: {title?, content?, preview?}|null` (POST → title+content+preview; COMMENT → content+preview; EVENT → title+content+preview; USER → member name preview). Target previews fetched in parallel via Promise.all. Reporter + resolver users resolved via batched db.user.findMany (since ModerationReport has no relation fields).
+   659→     - POST: body `{ targetType: 'POST'|'COMMENT'|'USER'|'EVENT', targetId, reason, description? }` — any workspace member can report. Validates reason ∈ SPAM|HARASSMENT|HATE_SPEECH|VIOLENCE|NSFW|OTHER; validates target existence in workspace (returns 404 otherwise); prevents duplicate open reports (same reporterId+targetType+targetId+status PENDING/REVIEWING → 409); writes `REPORT_CREATE` audit log; returns `{ success, report: { id } }`.
+   660→
+   661→  2. **moderation/reports/[reportId]/route.ts** — GET (single) + PATCH (resolve/dismiss)
+   662→     - GET: requires canModerate; returns full report (id, targetType, targetId, reason, description, status, resolution, createdAt, resolvedAt, reporter, resolver, target). Reporter + resolver fetched in parallel via db.user.findUnique; target fetched via fetchTargetFull (280-char preview).
+   663→     - PATCH: body `{ status: 'RESOLVED'|'DISMISSED', resolution? }` requires canModerate; RESOLVED requires non-empty resolution (max 2000 chars); sets resolvedBy=ctx.user.id + resolvedAt=now; writes `REPORT_RESOLVE` or `REPORT_DISMISS` audit; sends SYSTEM notification to reporter with reason + resolution; returns `{ success, report: { id, status, resolution, resolvedBy, resolvedAt } }`.
+   664→
+   665→  3. **moderation/queue/route.ts** — GET (unified moderation queue)
+   666→     - Requires canModerate; returns `{ pending, reviewing, resolvedToday, dismissedToday, items }` where counts run in a single Promise.all and "today" boundary = local-midnight. `items` = top 20 PENDING reports (newest first) with optional `?targetType=&reason=` filters, same shape as reports list (reporter/resolver/target-preview included).
+   667→
+   668→  4. **moderation/keywords/route.ts** — GET (list) + POST (add) + DELETE (remove)
+   669→     - GET: requires canModerate; optional `?action=` filter; returns `{ keywords: [...] }` with full BannedKeyword shape (id, workspaceId, keyword, action, replacement, severity, createdBy, createdAt).
+   670→     - POST: body `{ keyword, action: 'BLOCK'|'REVIEW'|'REPLACE', replacement?, severity? }` requires canModerate; validates keyword 1-100 chars; validates action; validates severity ∈ LOW|MEDIUM|HIGH|CRITICAL (default MEDIUM); REPLACE requires non-empty replacement (max 100); prevents duplicates within workspace (409); writes `KEYWORD_ADD` audit; returns created keyword.
+   671→     - DELETE: `?id={keywordId}` requires canModerate; workspace-scoped lookup (404 if not found); writes `KEYWORD_REMOVE` audit with the removed keyword+action; returns `{ success }`.
+   672→
+   673→  5. **moderation/check/route.ts** — POST (check content against banned keywords)
+   674→     - Body `{ content }` (sanitized to 50000 chars); requires workspace membership. Returns `{ allowed, flagged, matchedKeywords: [{keyword, action}], cleanedContent }`. Iterates workspace's banned keywords; regex-escapes literal segments (treating `*` as `.*` wildcard); BLOCK → allowed=false; REVIEW → flagged=true; REPLACE → applies replacement (or `***` default) via global regex replace. Multiple matches accumulate; cleanedContent reflects all REPLACE actions applied.
+   675→
+   676→  6. **moderation/audit-log/route.ts** — GET (paginated audit log)
+   677→     - `?page=&pageSize=&action=&actorId=` requires `canManageMembers` (OWNER/ADMIN only); workspace-scoped; sorted by createdAt desc; returns `{ logs, total, page, pageSize, totalPages }`. Each log: `{ id, action, targetType, targetId, metadata (parsed via safeJsonParse), ip, createdAt, actor: {id, name, avatarUrl, role} | null }`. Actor users resolved via batched db.user.findMany.
+   678→
+   679→  7. **notifications/route.ts** — GET (list) + POST (mark all read) + DELETE (clear read)
+   680→     - GET: `?page=&pageSize=&unreadOnly=false` scoped to `ctx.user.id` + `ctx.workspaceId`; returns `{ notifications, total, page, pageSize, totalPages, unreadCount }` with each notification carrying all fields + `actor: {name, avatarUrl}|null` (actor resolved via batched db.user.findMany). unreadCount computed in parallel with total.
+   681→     - POST: mark all unread notifications for user+workspace as read via `db.notification.updateMany`; returns `{ success, markedRead }` (count from `result.count`).
+   682→     - DELETE: delete all read notifications for user+workspace via `db.notification.deleteMany`; returns `{ success, deleted }`.
+   683→
+   684→  8. **notifications/[notificationId]/route.ts** — PATCH (toggle read) + DELETE
+   685→     - PATCH: body `{ read: boolean }`; workspace+user-scoped findFirst (404 if not owned); validates read is boolean; updates the row; returns `{ success, notification: { id, read } }`.
+   686→     - DELETE: workspace+user-scoped findFirst (404 if not owned); deletes; returns `{ success }`.
+   687→
+   688→  9. **notifications/unread-count/route.ts** — GET. Returns `{ count }` for `ctx.user.id` + `ctx.workspaceId` where read=false.
+   689→
+   690→  10. **moderation/warnings/route.ts** — GET (list warnings for a member)
+   691→      - `?memberId={memberId}` requires canModerate; confirms member exists in workspace (404 otherwise); returns `{ warnings: [...] }` sorted by createdAt desc, each `{ id, reason, severity, acknowledged, createdAt, issuedBy: {name, avatarUrl} | null }`. Issuer users resolved via batched db.user.findMany.
+   692→
+   693→- Critical-requirements compliance:
+   694→  * `export const dynamic = 'force-dynamic'` on all 10 files ✅
+   695→  * `params: Promise<{reportId|notificationId: string}>` declared and `await`-ed on [reportId] and [notificationId] routes ✅
+   696→  * try/catch + console.error + generic 500 on every handler ✅
+   697→  * Workspace-scoped reads/writes (every query filters by ctx.workspaceId, and notifications/warnings also scoped by ctx.user.id or memberId) ✅
+   698→  * Status discipline: 401 (no ctx), 403 (canModerate/canManageMembers fail), 404 (target/report/keyword/member/notification not found), 400 (validation: invalid JSON, missing/invalid body fields, missing query param), 409 (duplicate open report, duplicate keyword), 500 (catch) ✅
+   699→  * sanitizeString applied to all free-text inputs (description, reason, resolution, keyword, replacement, content, targetId) ✅
+
+[showing lines 400-699 of 1037; use offset=700 with limit to continue reading]

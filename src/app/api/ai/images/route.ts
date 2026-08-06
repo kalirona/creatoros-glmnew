@@ -1,52 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server'
-import ZAI from 'z-ai-web-dev-sdk'
 import { db } from '@/lib/db'
+import {
+  generateImage,
+  ASPECT_RATIOS,
+  IMAGE_STYLES,
+} from '@/lib/ai-engine'
+import {
+  getDemoUser,
+  DEMO_WORKSPACE_ID,
+  mapEngineError,
+} from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// POST /api/ai/images — generate an AI image via the AI Engine.
+// Creators never see providerSlug/modelId/costUsd/durationMs.
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { prompt } = body as { prompt?: string }
-    if (!prompt?.trim()) return NextResponse.json({ error: 'Prompt is required' }, { status: 400 })
+    const body = await req.json().catch(() => ({}))
+    const {
+      prompt,
+      style,
+      aspectRatio,
+      projectId,
+      title,
+    } = body as {
+      prompt?: string
+      style?: string
+      aspectRatio?: string
+      projectId?: string
+      title?: string
+    }
 
-    const user = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
-    if (!user) return NextResponse.json({ error: 'No user found' }, { status: 400 })
+    // ── Validate prompt ──────────────────────────────────────────────────
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+      return NextResponse.json({ error: 'Prompt is required.' }, { status: 400 })
+    }
+    if (prompt.length > 2000) {
+      return NextResponse.json({ error: 'Prompt must be 2000 characters or fewer.' }, { status: 400 })
+    }
+    const cleanPrompt = prompt.trim()
 
-    const cost = 3
-    if (user.credits < cost) return NextResponse.json({ error: `Insufficient credits (${cost} required, ${user.credits} available)` }, { status: 402 })
+    // ── Validate style ────────────────────────────────────────────────────
+    const validStyles = IMAGE_STYLES as readonly string[]
+    const cleanStyle =
+      style && validStyles.includes(style) ? style : undefined
 
-    const zai = await ZAI.create()
-    const result = await zai.images.generations.create({
-      prompt: prompt.trim(),
-      size: '1024x1024',
-    }) as any
+    // ── Validate aspect ratio ─────────────────────────────────────────────
+    const validRatios = Object.keys(ASPECT_RATIOS)
+    const cleanRatio =
+      aspectRatio && validRatios.includes(aspectRatio) ? aspectRatio : undefined
 
-    const url = result.data?.[0]?.url || result.url || result.base64 || ''
-    if (!url) return NextResponse.json({ error: 'AI failed to generate image' }, { status: 502 })
+    // ── Demo user ─────────────────────────────────────────────────────────
+    const user = await getDemoUser()
+    if (!user) {
+      return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
+    }
 
-    // Deduct credits
-    await db.user.update({ where: { id: user.id }, data: { credits: { decrement: cost } } })
-    await db.creditTransaction.create({ data: { userId: user.id, amount: -cost, reason: `AI Image: ${prompt.slice(0, 50)}` } })
-
-    // Save generation
-    await db.aiGeneration.create({
-      data: {
-        userId: user.id,
-        toolId: 'image-gen',
-        toolSlug: 'IMAGE_GEN',
-        title: prompt.slice(0, 80),
-        input: prompt,
-        output: url,
-        status: 'COMPLETED',
-        creditsUsed: cost,
-      },
+    // ── Call the engine ──────────────────────────────────────────────────
+    const result = await generateImage({
+      prompt: cleanPrompt,
+      style: cleanStyle,
+      aspectRatio: cleanRatio,
+      userId: user.id,
+      workspaceId: DEMO_WORKSPACE_ID,
+      projectId,
+      title,
     })
 
-    return NextResponse.json({ url, creditsUsed: cost, remainingCredits: user.credits - cost })
+    // ── Creator-safe response (strip providerSlug, modelId, costUsd, durationMs) ──
+    return NextResponse.json({
+      generationId: result.generationId,
+      assetId: result.assetId,
+      url: result.url,
+      thumbnailUrl: result.thumbnailUrl,
+      width: result.width,
+      height: result.height,
+      creditsUsed: result.creditsUsed,
+      remainingCredits: result.remainingCredits,
+    })
   } catch (e) {
-    console.error('AI image error:', e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Failed to generate image' }, { status: 500 })
+    console.error('AI image generation error:', e)
+    const { status, message } = mapEngineError(e)
+    return NextResponse.json({ error: message }, { status })
   }
 }
