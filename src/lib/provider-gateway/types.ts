@@ -21,6 +21,8 @@ export type Modality =
 
 export type HealthStatus = 'healthy' | 'degraded' | 'down'
 
+export type ModelProviderStatus = 'available' | 'unavailable' | 'deprecated' | 'disabled' | 'preview' | 'beta' | 'private' | 'unknown'
+
 export interface DiscoveredModel {
   id: string                // provider's model id (e.g. "deepseek/deepseek-chat")
   name: string              // display name
@@ -38,6 +40,9 @@ export interface DiscoveredModel {
   supportsToolCalling: boolean
   supportsReasoning: boolean
   tags: string[]
+  // Provider-reported status — determines whether the model is usable by this API key
+  // Defaults to 'available' if not specified by the adapter
+  providerStatus?: ModelProviderStatus
 }
 
 export interface ValidationResult {
@@ -76,6 +81,12 @@ export interface SyncResult {
   modelsUpdated: number
   modelsRemoved: number
   modelsKept: number
+  // New: unavailable models (exist in catalog but can't be used by this API key)
+  modelsUnavailable: number
+  // New: models that were enabled (available + not previously disabled by admin)
+  modelsEnabled: number
+  // New: models that were disabled (unavailable or deprecated)
+  modelsDisabled: number
   durationMs: number
   error?: string
 }

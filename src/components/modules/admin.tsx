@@ -63,6 +63,11 @@ interface ProviderModel {
   providerTags?: string[]
   isCustomPricing?: boolean
   lastSyncedAt?: string | null
+  // Provider status & verification
+  providerStatus?: string  // available | unavailable | deprecated | disabled | preview | beta | private | unknown
+  isVerified?: boolean
+  lastTestedAt?: string | null
+  latencyMs?: number
 }
 
 interface Provider {
@@ -137,6 +142,9 @@ interface SyncModelsResult {
   modelsUpdated?: number
   modelsRemoved?: number
   modelsKept?: number
+  modelsUnavailable?: number
+  modelsEnabled?: number
+  modelsDisabled?: number
   durationMs?: number
   error?: string
   message?: string
@@ -486,7 +494,7 @@ export function LoadingBlock() {
 
 async function mutate(
   url: string, method: 'PUT' | 'POST' | 'PATCH' | 'DELETE',
-  body?: unknown, okMessage?: string,
+  body?: unknown, okMessage?: string, silent = false,
 ): Promise<{ ok: boolean; data?: unknown }> {
   try {
     const res = await fetch(url, {
@@ -499,7 +507,7 @@ async function mutate(
     if (okMessage) toast.success(okMessage)
     return { ok: true, data: d }
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : 'Request failed')
+    if (!silent) toast.error(e instanceof Error ? e.message : 'Request failed')
     return { ok: false }
   }
 }
@@ -918,8 +926,8 @@ export function ProvidersPanel() {
         return
       }
       toast.success(
-        `Synced: ${d.modelsFound ?? 0} found, ${d.modelsAdded ?? 0} added, ${d.modelsUpdated ?? 0} updated, ${d.modelsRemoved ?? 0} removed`,
-        { id: tid },
+        `Sync complete: ${d.modelsFound ?? 0} found · ${d.modelsAdded ?? 0} new · ${d.modelsUpdated ?? 0} updated · ${d.modelsRemoved ?? 0} removed · ${d.modelsUnavailable ?? 0} unavailable · ${d.modelsEnabled ?? 0} enabled`,
+        { id: tid, duration: 8000 },
       )
       refetch()
     } catch (e) {
@@ -2265,9 +2273,53 @@ function ModelsTable({
   const [editingPricing, setEditingPricing] = useState<ProviderModel | null>(null)
 
   const toggleField = async (m: ProviderModel, field: 'isActive' | 'isDefault', v: boolean) => {
+    // Prevent enabling unavailable models
+    if (field === 'isActive' && v && m.providerStatus && m.providerStatus !== 'available') {
+      toast.error(`Cannot enable — model is ${m.providerStatus}`)
+      return
+    }
+    if (field === 'isDefault' && v && m.providerStatus && m.providerStatus !== 'available') {
+      toast.error(`Cannot set as default — model is ${m.providerStatus}`)
+      return
+    }
     setTogglingId(m.id)
     await mutate('/api/admin/models', 'PUT', { id: m.id, [field]: v }, `${m.displayName} ${field} ${v ? 'on' : 'off'}`)
     setTogglingId(null)
+  }
+
+  const testModel = async (m: ProviderModel) => {
+    setTogglingId(m.id)
+    const tid = toast.loading(`Testing ${m.displayName}…`)
+    try {
+      const res = await fetch(`/api/admin/providers/${provider.id}/test-prompt`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: m.id, prompt: 'Hello World' }),
+      })
+      const d = (await res.json().catch(() => ({}))) as { success: boolean; latencyMs?: number; error?: string }
+      if (d.success) {
+        toast.success(`${m.displayName}: OK (${d.latencyMs ?? 0}ms)`, { id: tid })
+        // Update model with verification + latency
+        await mutate('/api/admin/models', 'PUT', {
+          id: m.id,
+          isVerified: true,
+          lastTestedAt: new Date().toISOString(),
+          latencyMs: d.latencyMs ?? 0,
+        }, undefined, true)
+      } else {
+        toast.error(`${m.displayName}: ${d.error || 'test failed'}`, { id: tid })
+        // Mark as unverified
+        await mutate('/api/admin/models', 'PUT', {
+          id: m.id,
+          isVerified: false,
+          lastTestedAt: new Date().toISOString(),
+        }, undefined, true)
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Test failed', { id: tid })
+    } finally {
+      setTogglingId(null)
+    }
   }
 
   const updatePricing = async (m: ProviderModel, inputCost: number, outputCost: number) => {
@@ -2315,20 +2367,48 @@ function ModelsTable({
           <thead className="sticky top-0 bg-card border-b">
             <tr className="text-left text-[9px] uppercase tracking-wider text-muted-foreground">
               <th className="px-2 py-1.5 font-medium">Name</th>
+              <th className="px-2 py-1.5 font-medium">Status</th>
               <th className="px-2 py-1.5 font-medium">Modality</th>
               <th className="px-2 py-1.5 font-medium text-right">Context</th>
               <th className="px-2 py-1.5 font-medium text-right">In/Out $/1k</th>
               <th className="px-2 py-1.5 font-medium">Capabilities</th>
               <th className="px-2 py-1.5 font-medium text-center">Active</th>
               <th className="px-2 py-1.5 font-medium text-center">Default</th>
+              <th className="px-2 py-1.5 font-medium text-center">Test</th>
             </tr>
           </thead>
           <tbody>
-            {provider.models.map((m) => (
+            {provider.models.map((m) => {
+              const status = m.providerStatus || 'available'
+              const isAvailable = status === 'available'
+              const statusColors: Record<string, string> = {
+                available: 'bg-emerald-500/10 text-emerald-600',
+                unavailable: 'bg-red-500/10 text-red-600',
+                deprecated: 'bg-amber-500/10 text-amber-600',
+                disabled: 'bg-muted text-muted-foreground',
+                preview: 'bg-sky-500/10 text-sky-600',
+                beta: 'bg-violet-500/10 text-violet-600',
+                private: 'bg-zinc-500/10 text-zinc-600',
+                unknown: 'bg-muted text-muted-foreground',
+              }
+              return (
               <tr key={m.id} className="border-b last:border-0 hover:bg-muted/40">
                 <td className="px-2 py-1.5">
                   <p className="font-medium truncate max-w-[120px]">{m.displayName}</p>
                   <code className="text-[9px] text-muted-foreground truncate block max-w-[120px]">{m.name}</code>
+                </td>
+                <td className="px-2 py-1.5">
+                  <Badge variant="secondary" className={cn('text-[8px] px-1 py-0 capitalize', statusColors[status] || statusColors.unknown)}>
+                    {status}
+                  </Badge>
+                  {m.isVerified && (
+                    <Badge variant="secondary" className="text-[8px] px-1 py-0 ml-1 bg-emerald-500/10 text-emerald-600" title="Verified with real test request">
+                      ✓
+                    </Badge>
+                  )}
+                  {m.latencyMs != null && m.latencyMs > 0 && (
+                    <span className="text-[8px] text-muted-foreground ml-1 font-mono">{m.latencyMs}ms</span>
+                  )}
                 </td>
                 <td className="px-2 py-1.5">
                   <Badge variant="secondary" className={cn('text-[8px] px-1 py-0', MODALITY_COLORS[m.modality] || 'bg-muted')}>
@@ -2356,22 +2436,36 @@ function ModelsTable({
                 <td className="px-2 py-1.5 text-center">
                   <Switch
                     checked={m.isActive}
-                    disabled={togglingId === m.id}
+                    disabled={togglingId === m.id || !isAvailable}
                     onCheckedChange={(v) => toggleField(m, 'isActive', v)}
+                    title={!isAvailable ? `Cannot enable — model is ${status}` : undefined}
                   />
                 </td>
                 <td className="px-2 py-1.5 text-center">
                   <button
-                    onClick={() => toggleField(m, 'isDefault', !m.isDefault)}
-                    disabled={togglingId === m.id}
-                    className="p-1"
-                    title={m.isDefault ? 'Default model' : 'Set as default'}
+                    onClick={() => isAvailable && toggleField(m, 'isDefault', !m.isDefault)}
+                    disabled={togglingId === m.id || !isAvailable}
+                    className="p-1 disabled:opacity-30"
+                    title={m.isDefault ? 'Default model' : isAvailable ? 'Set as default' : `Cannot set default — model is ${status}`}
                   >
                     <Star className={cn('h-3.5 w-3.5', m.isDefault ? 'fill-amber-500 text-amber-500' : 'text-muted-foreground hover:text-amber-500')} />
                   </button>
                 </td>
+                <td className="px-2 py-1.5 text-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[9px]"
+                    disabled={togglingId === m.id || !isAvailable}
+                    onClick={() => testModel(m)}
+                    title="Send a test request to verify this model works"
+                  >
+                    {togglingId === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Stethoscope className="h-3 w-3" />}
+                  </Button>
+                </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

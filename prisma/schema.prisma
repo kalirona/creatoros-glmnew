@@ -657,17 +657,37 @@ model AiModel {
   supportsJson        Boolean @default(false) // JSON mode
   supportsToolCalling Boolean @default(false) // tool use / function calling
   supportsReasoning   Boolean @default(false) // thinking / chain-of-thought
-  // Sync metadata
+  // ── Provider status & verification ────────────────────────────────────────
+  // providerStatus: the model's status as reported by the provider.
+  //   available   = model exists and is usable by this API key
+  //   unavailable = model exists in catalog but can't be used (quota/account restriction)
+  //   deprecated  = provider has marked this model as deprecated
+  //   disabled    = provider has disabled this model
+  //   preview     = model is in preview/beta
+  //   beta        = model is in beta
+  //   private     = model requires special access
+  //   unknown     = status couldn't be determined (treat as unavailable)
+  providerStatus  String  @default("available")
+  // isVerified: true only after a real test request confirmed the model works
+  // with this API key. Unverified models exist in the catalog but haven't been tested.
+  isVerified      Boolean @default(false)
+  // lastTestedAt: when this model was last tested with a real request
+  lastTestedAt    DateTime?
+  // latencyMs: last measured latency from a test request
+  latencyMs       Int     @default(0)
+  // ── Sync metadata ─────────────────────────────────────────────────────────
   providerTags  String   @default("[]") // JSON array of tags from provider
   isCustomPricing Boolean @default(false) // admin overrode pricing
   lastSyncedAt  DateTime?
-  isActive      Boolean  @default(true)
+  isActive      Boolean  @default(true)  // admin-enabled (false = excluded from routing)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @default(now()) @updatedAt
 
   provider     AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
 
   @@index([providerId])
+  @@index([modality, isActive])
+  @@index([providerStatus])
   @@unique([providerId, name])
 }
 

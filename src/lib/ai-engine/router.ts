@@ -4,6 +4,11 @@
 // Given a route category (e.g. "IMAGE", "WRITING", "VIDEO"), resolve which
 // provider + model should serve the request. Falls back to next provider on
 // failure. Creators never call this directly — they call generateText/Image.
+//
+// Routing rules:
+//   - Only models with isActive=true AND providerStatus='available' are eligible
+//   - Unavailable, deprecated, disabled, preview, beta, private models are excluded
+//   - If the default model is unavailable, falls back to next available model
 // ============================================================================
 
 import { db } from '@/lib/db'
@@ -14,6 +19,9 @@ interface CacheEntry { value: RouteResolution | null; expires: number }
 const routeCache = new Map<RouteCategory, CacheEntry>()
 const CACHE_TTL_MS = 30_000
 
+// Only models with these statuses are eligible for routing
+const ROUTABLE_STATUSES = ['available']
+
 export async function resolveRoute(category: RouteCategory): Promise<RouteResolution | null> {
   const cached = routeCache.get(category)
   if (cached && cached.expires > Date.now()) return cached.value
@@ -22,13 +30,31 @@ export async function resolveRoute(category: RouteCategory): Promise<RouteResolu
   const route = await db.aiRoute.findFirst({
     where: { toolCategory: category, isActive: true },
     include: {
-      provider: { include: { models: { where: { isActive: true } } } },
-      fallbackProvider: { include: { models: { where: { isActive: true } } } },
+      provider: {
+        include: {
+          models: {
+            where: {
+              isActive: true,
+              providerStatus: { in: ROUTABLE_STATUSES },
+            },
+          },
+        },
+      },
+      fallbackProvider: {
+        include: {
+          models: {
+            where: {
+              isActive: true,
+              providerStatus: { in: ROUTABLE_STATUSES },
+            },
+          },
+        },
+      },
     },
   })
 
   if (route?.provider && route.provider.isActive && route.provider.isHealthy) {
-    // Pick model: explicit override → provider's default → first active model
+    // Pick model: explicit override → provider's default → first available active model
     const model =
       (route.modelId ? route.provider.models.find((m) => m.id === route.modelId) : null) ||
       route.provider.models.find((m) => m.isDefault) ||
@@ -62,7 +88,14 @@ export async function resolveRoute(category: RouteCategory): Promise<RouteResolu
       capabilities: { contains: neededCap },
     },
     orderBy: { priority: 'asc' },
-    include: { models: { where: { isActive: true } } },
+    include: {
+      models: {
+        where: {
+          isActive: true,
+          providerStatus: { in: ROUTABLE_STATUSES },
+        },
+      },
+    },
   })
 
   if (!fallbackProvider) {

@@ -44,6 +44,9 @@ export async function POST(
       modelsUpdated: result.modelsUpdated,
       modelsRemoved: result.modelsRemoved,
       modelsKept: result.modelsKept,
+      modelsUnavailable: result.modelsUnavailable,
+      modelsEnabled: result.modelsEnabled,
+      modelsDisabled: result.modelsDisabled,
       durationMs: result.durationMs,
       error: result.error,
     })

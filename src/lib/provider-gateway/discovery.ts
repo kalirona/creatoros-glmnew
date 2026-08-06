@@ -686,21 +686,28 @@ export async function validateProviderKey(
 }
 
 // ─── Sync models to database (from REAL provider API response) ─────────────
+// Rules:
+//   1. Only models returned by the provider are saved (no hardcoded lists)
+//   2. New models: isActive=true ONLY if providerStatus='available'
+//   3. Existing models: preserve admin's isActive choice (don't auto-re-enable)
+//   4. Removed models: mark providerStatus='unavailable', isActive=false (keep history)
+//   5. Deprecated models: providerStatus='deprecated', isActive=false
 
 export async function syncProviderModels(providerId: string): Promise<SyncResult> {
   const start = Date.now()
+  const empty: SyncResult = { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, modelsUnavailable: 0, modelsEnabled: 0, modelsDisabled: 0, durationMs: 0 }
   const provider = await db.aiProvider.findUnique({
     where: { id: providerId },
     include: { models: true },
   })
   if (!provider) {
-    return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: 0, error: 'Provider not found' }
+    return { ...empty, error: 'Provider not found' }
   }
 
   const slug = provider.slug as ProviderSlug
   const adapter = ADAPTERS[slug]
   if (!adapter) {
-    return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: 0, error: `No adapter for provider: ${slug}` }
+    return { ...empty, error: `No adapter for provider: ${slug}` }
   }
 
   // For GLM/Z.ai — use the SDK (no HTTP endpoint)
@@ -709,17 +716,17 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
     discovered = GLM_MODELS
   } else {
     if (!provider.apiKey || provider.apiKey.trim().length < 10) {
-      return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: 0, error: 'No API key configured. Validate a key first.' }
+      return { ...empty, error: 'No API key configured. Validate a key first.' }
     }
     const url = provider.baseUrl || adapter.defaultBaseUrl
     if (!url) {
-      return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: 0, error: 'No base URL configured.' }
+      return { ...empty, error: 'No base URL configured.' }
     }
     try {
       discovered = await adapter.fetchModels(provider.apiKey, url, (provider.timeout || 30) * 1000)
     } catch (e) {
       const msg = e instanceof ProviderError ? e.message : (e instanceof Error ? e.message : 'Sync failed')
-      return { status: 'failed', modelsFound: 0, modelsAdded: 0, modelsUpdated: 0, modelsRemoved: 0, modelsKept: 0, durationMs: Date.now() - start, error: msg }
+      return { ...empty, durationMs: Date.now() - start, error: msg }
     }
   }
 
@@ -731,11 +738,21 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
   let updated = 0
   let removed = 0
   let kept = 0
+  let unavailable = 0
+  let enabled = 0
+  let disabled = 0
 
   // Add or update discovered models
   for (const d of discovered) {
+    // Determine providerStatus — default to 'available' if not specified
+    const pStatus = (d as any).providerStatus || 'available'
+    const isAvailable = pStatus === 'available'
+    if (!isAvailable) unavailable++
+
     const existing = existingMap.get(d.id)
     if (!existing) {
+      // New model — only enable if available
+      const shouldEnable = isAvailable
       await db.aiModel.create({
         data: {
           providerId,
@@ -755,68 +772,67 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
           supportsToolCalling: d.supportsToolCalling,
           supportsReasoning: d.supportsReasoning,
           providerTags: JSON.stringify(d.tags),
+          providerStatus: pStatus,
           lastSyncedAt: new Date(),
-          isActive: true,
+          isActive: shouldEnable,
         },
       })
       added++
+      if (shouldEnable) enabled++
+      else disabled++
     } else {
-      // Update metadata but preserve custom pricing
-      if (existing.isCustomPricing) {
-        await db.aiModel.update({
-          where: { id: existing.id },
-          data: {
-            displayName: d.name,
-            modality: d.modality,
-            contextWindow: d.contextWindow,
-            supportsVision: d.supportsVision,
-            supportsImage: d.supportsImage,
-            supportsAudio: d.supportsAudio,
-            supportsVideo: d.supportsVideo,
-            supportsEmbeddings: d.supportsEmbeddings,
-            supportsStreaming: d.supportsStreaming,
-            supportsJson: d.supportsJson,
-            supportsToolCalling: d.supportsToolCalling,
-            supportsReasoning: d.supportsReasoning,
-            providerTags: JSON.stringify(d.tags),
-            lastSyncedAt: new Date(),
-          },
-        })
-      } else {
-        await db.aiModel.update({
-          where: { id: existing.id },
-          data: {
-            displayName: d.name,
-            modality: d.modality,
-            contextWindow: d.contextWindow,
-            inputCostPer1k: d.inputCostPer1k,
-            outputCostPer1k: d.outputCostPer1k,
-            supportsVision: d.supportsVision,
-            supportsImage: d.supportsImage,
-            supportsAudio: d.supportsAudio,
-            supportsVideo: d.supportsVideo,
-            supportsEmbeddings: d.supportsEmbeddings,
-            supportsStreaming: d.supportsStreaming,
-            supportsJson: d.supportsJson,
-            supportsToolCalling: d.supportsToolCalling,
-            supportsReasoning: d.supportsReasoning,
-            providerTags: JSON.stringify(d.tags),
-            lastSyncedAt: new Date(),
-          },
-        })
+      // Existing model — update metadata but PRESERVE admin's isActive choice
+      // (don't auto-re-enable a model the admin disabled)
+      const updateData: Record<string, unknown> = {
+        displayName: d.name,
+        modality: d.modality,
+        contextWindow: d.contextWindow,
+        supportsVision: d.supportsVision,
+        supportsImage: d.supportsImage,
+        supportsAudio: d.supportsAudio,
+        supportsVideo: d.supportsVideo,
+        supportsEmbeddings: d.supportsEmbeddings,
+        supportsStreaming: d.supportsStreaming,
+        supportsJson: d.supportsJson,
+        supportsToolCalling: d.supportsToolCalling,
+        supportsReasoning: d.supportsReasoning,
+        providerTags: JSON.stringify(d.tags),
+        providerStatus: pStatus,
+        lastSyncedAt: new Date(),
       }
+      // Update pricing only if not custom
+      if (!existing.isCustomPricing) {
+        updateData.inputCostPer1k = d.inputCostPer1k
+        updateData.outputCostPer1k = d.outputCostPer1k
+      }
+      // If model became unavailable/deprecated, force-disable it
+      if (!isAvailable && existing.isActive) {
+        updateData.isActive = false
+        disabled++
+      } else if (isAvailable && existing.isActive) {
+        enabled++
+      }
+      await db.aiModel.update({
+        where: { id: existing.id },
+        data: updateData,
+      })
       updated++
     }
   }
 
-  // Disable models that are no longer in the provider's response (don't delete — keep history)
+  // Mark removed models as unavailable + disabled (don't delete — keep history)
   for (const [name, existing] of existingMap) {
     if (!discoveredNames.has(name) && !existing.isCustomPricing) {
       await db.aiModel.update({
         where: { id: existing.id },
-        data: { isActive: false },
+        data: {
+          providerStatus: 'unavailable',
+          isActive: false,
+          lastSyncedAt: new Date(),
+        },
       })
       removed++
+      unavailable++
     } else if (!discoveredNames.has(name)) {
       kept++
     } else {
@@ -851,6 +867,9 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
     modelsUpdated: updated,
     modelsRemoved: removed,
     modelsKept: kept,
+    modelsUnavailable: unavailable,
+    modelsEnabled: enabled,
+    modelsDisabled: disabled,
     durationMs: Date.now() - start,
   }
 }

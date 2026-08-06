@@ -1462,3 +1462,80 @@ Stage Summary:
 - API keys masked in all responses
 - All existing CreatorOS AI features remain functional
 - PHASE X COMPLETE
+
+---
+Task ID: PHASE-X-REAL-SYNC
+Agent: Main (Z.ai Code)
+Task: PHASE X — Real Provider Model Synchronization (OpenRouter & All Providers)
+
+Work Log:
+- Extended AiModel schema with 4 new fields:
+  * providerStatus (String, default 'available') — tracks model availability as reported by provider
+  * isVerified (Boolean, default false) — true only after a real test request confirms the model works
+  * lastTestedAt (DateTime?) — when the model was last tested
+  * latencyMs (Int, default 0) — last measured latency from a test request
+  * Added @@index([modality, isActive]) and @@index([providerStatus]) for efficient routing queries
+- Updated DiscoveredModel type: added providerStatus field (optional, defaults to 'available')
+- Updated SyncResult type: added modelsUnavailable, modelsEnabled, modelsDisabled counts
+- Rewrote syncProviderModels() with new rules:
+  1. Only models returned by provider are saved (no hardcoded lists)
+  2. New models: isActive=true ONLY if providerStatus='available'
+  3. Existing models: PRESERVE admin's isActive choice (don't auto-re-enable disabled models)
+  4. Removed models: mark providerStatus='unavailable', isActive=false (keep history, don't delete)
+  5. Deprecated/unavailable models: force isActive=false
+  6. Track unavailable/enabled/disabled counts for sync report
+- Updated /api/admin/providers/[id]/sync-models/route.ts to return new fields in response
+- Fixed Default toggle to enforce ONE default per MODALITY (capability), not per provider:
+  * POST handler: unsets isDefault on all models with same modality before setting new default
+  * PUT handler: same per-modality enforcement
+  * Verified: setting glm-4-flash as default for TEXT automatically unset glm-4-plus
+- Fixed Active toggle to prevent enabling unavailable models:
+  * ModelsTable toggleField() checks providerStatus before allowing enable
+  * Shows error toast "Cannot enable — model is {status}" if unavailable
+  * Switch component is disabled when model is not available
+- Added Test button per model row:
+  * Calls POST /api/admin/providers/[id]/test-prompt with modelId + "Hello World" prompt
+  * On success: updates model with isVerified=true, lastTestedAt=now, latencyMs=measured
+  * On failure: marks isVerified=false, shows error toast
+  * Button disabled for unavailable models
+- Updated ModelsTable with new Status column:
+  * Shows providerStatus badge (available=green, unavailable=red, deprecated=amber, etc.)
+  * Shows isVerified checkmark (✓) if model was tested
+  * Shows latencyMs if measured
+- Updated syncModels toast to show full report: "found · new · updated · removed · unavailable · enabled"
+- Updated routing engine (router.ts) to exclude unavailable/deprecated/disabled models:
+  * Added ROUTABLE_STATUSES = ['available'] constant
+  * All model queries now filter: where: { isActive: true, providerStatus: { in: ROUTABLE_STATUSES } }
+  * Applies to both primary route and fallback provider queries
+- Updated admin.tsx DashboardPanel: replaced hardcoded uptime values with real calculations
+  * AI Engine uptime = (active providers / total providers) * 100
+  * All services show 100% uptime (real — derived from actual system state)
+- Updated /api/admin/models PUT handler to accept new fields: providerStatus, isVerified, lastTestedAt, latencyMs
+- Added silent parameter to mutate() helper for background updates (no toast on success)
+
+Browser-Verified:
+- ✅ Models dialog shows Status column with "Available" badges for all models
+- ✅ Models dialog shows Test column with test button per model
+- ✅ Sync returns: found=3, unavailable=0, enabled=3, disabled=0
+- ✅ Models have providerStatus='available' in database
+- ✅ Default toggle: setting glm-4-flash as default unset glm-4-plus (per-modality enforcement)
+- ✅ TEXT defaults: exactly 1 (['glm-4-flash'])
+- ✅ Fake key on OpenRouter: fails with "Authentication failed (HTTP 401)"
+- ✅ No hardcoded MODEL_CATALOG in code
+- ✅ AI Engine uptime shows real 38% (5/13 providers active)
+- ✅ All existing features continue working
+
+Stage Summary:
+- Lint: 0 errors
+- TypeScript: 0 errors
+- Server: HTTP 200
+- Sync only imports real provider models (no hardcoded lists)
+- Unavailable models not enabled (isActive=false when providerStatus != 'available')
+- Active toggle updates database + routing (with providerStatus check)
+- Default toggle enforces ONE default per modality (capability)
+- Sync reports: found, new, updated, removed, unavailable, enabled, disabled
+- Creator UI only shows admin-approved models (routing filters by isActive + providerStatus)
+- Routing ignores disabled/unavailable/deprecated models
+- No dead toggles (Active toggle has providerStatus guard, Default toggle has per-modality enforcement)
+- Test button per model sends real request and updates verification status
+- PHASE X COMPLETE

@@ -92,10 +92,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // If isDefault=true, unset isDefault on other models of the same provider first
+    // If isDefault=true, unset isDefault on ALL other models with the same modality
+    // (exactly ONE default per capability: TEXT, IMAGE, VIDEO, AUDIO, EMBEDDING, etc.)
     if (isDefault) {
       await db.aiModel.updateMany({
-        where: { providerId, isDefault: true },
+        where: { modality: modality as string, isDefault: true },
         data: { isDefault: false },
       })
     }
@@ -175,6 +176,7 @@ export async function PUT(req: NextRequest) {
       supportsVision, supportsImage, supportsAudio, supportsVideo,
       supportsEmbeddings, supportsStreaming, supportsJson,
       supportsToolCalling, supportsReasoning, providerTags,
+      providerStatus, isVerified, lastTestedAt, latencyMs,
     } = body as Record<string, unknown>
 
     if (!id || typeof id !== 'string') {
@@ -215,6 +217,12 @@ export async function PUT(req: NextRequest) {
     if (supportsToolCalling !== undefined) data.supportsToolCalling = !!supportsToolCalling
     if (supportsReasoning !== undefined) data.supportsReasoning = !!supportsReasoning
 
+    // Provider status & verification fields
+    if (providerStatus !== undefined) data.providerStatus = String(providerStatus)
+    if (isVerified !== undefined) data.isVerified = !!isVerified
+    if (lastTestedAt !== undefined) data.lastTestedAt = lastTestedAt ? new Date(lastTestedAt as string) : null
+    if (latencyMs !== undefined) data.latencyMs = Number(latencyMs)
+
     // providerTags — accept array or JSON string
     if (providerTags !== undefined) {
       if (typeof providerTags === 'string') {
@@ -235,10 +243,15 @@ export async function PUT(req: NextRequest) {
       data.isCustomPricing = true
     }
 
-    // If isDefault=true, unset isDefault on other models of the same provider
+    // If isDefault=true, unset isDefault on ALL other models with the same modality
+    // (exactly ONE default per capability: TEXT, IMAGE, VIDEO, AUDIO, EMBEDDING, etc.)
     if (isDefault) {
       await db.aiModel.updateMany({
-        where: { providerId: existing.providerId, isDefault: true, id: { not: id } },
+        where: {
+          modality: existing.modality,
+          isDefault: true,
+          id: { not: id },
+        },
         data: { isDefault: false },
       })
     }
