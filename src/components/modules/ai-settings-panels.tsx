@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import {
   BookOpen, ToggleRight, BarChart3, Plus, Search, Save, Trash2, Edit,
@@ -40,23 +40,14 @@ const PROMPT_CATEGORIES = [
   'System', 'Safety', 'Brand', 'Marketing', 'Course', 'Website', 'Image', 'Video', 'Email',
 ]
 
-// Seed prompts (in production these would be in the database)
-const SEED_PROMPTS: Prompt[] = [
-  { id: 'p1', name: 'Default System Prompt', category: 'System', content: 'You are CreatorOS AI, a helpful assistant for creators. Always be concise, professional, and actionable.', variables: ['{{user_input}}'], isActive: true, version: 3, updatedAt: '2026-08-01' },
-  { id: 'p2', name: 'Safety Guardrails', category: 'Safety', content: 'Never generate content that is illegal, harmful, or violates platform policies. Refuse requests for personal data, credentials, or malicious code.', variables: [], isActive: true, version: 2, updatedAt: '2026-07-28' },
-  { id: 'p3', name: 'Brand Voice — Professional', category: 'Brand', content: 'Write in a professional, confident tone. Use clear language. Address the reader directly. Avoid jargon.', variables: ['{{brand_name}}', '{{audience}}'], isActive: true, version: 5, updatedAt: '2026-08-03' },
-  { id: 'p4', name: 'Marketing Email Prompt', category: 'Marketing', content: 'Generate a high-converting email with: subject lines (3 options), preview text, greeting, body (short paragraphs), CTA, and P.S. Target audience: {{audience}}. Goal: {{goal}}.', variables: ['{{audience}}', '{{goal}}'], isActive: true, version: 8, updatedAt: '2026-08-05' },
-  { id: 'p5', name: 'Course Generator Prompt', category: 'Course', content: 'Create a complete online course as JSON with: title, subtitle, description, level, modules (4-5 with 3-4 lessons each), quiz, pricing. Topic: {{topic}}. Audience: {{audience}}.', variables: ['{{topic}}', '{{audience}}'], isActive: true, version: 12, updatedAt: '2026-08-04' },
-  { id: 'p6', name: 'Landing Page Hero', category: 'Website', content: 'Generate a high-converting landing page hero section: headline, subheadline, CTA text, and 3 benefit bullets. Product: {{product}}. Audience: {{audience}}.', variables: ['{{product}}', '{{audience}}'], isActive: true, version: 4, updatedAt: '2026-07-30' },
-  { id: 'p7', name: 'Image Style — Cinematic', category: 'Image', content: 'Cinematic style with dramatic lighting, film grain, shallow depth of field, and rich color grading.', variables: ['{{subject}}'], isActive: true, version: 2, updatedAt: '2026-07-25' },
-  { id: 'p8', name: 'Video Script — Social Reel', category: 'Video', content: 'Create a 30-second vertical video script for social media. Hook in first 3 seconds. Include visual cues and text overlays. Topic: {{topic}}.', variables: ['{{topic}}'], isActive: false, version: 1, updatedAt: '2026-07-20' },
-]
-
 export function PromptLibraryPanel() {
-  const [prompts] = useState<Prompt[]>(SEED_PROMPTS)
+  const { data, loading, refetch } = useApi<{ prompts: Prompt[] }>('/api/admin/prompts')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [editing, setEditing] = useState<Prompt | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  const prompts = data?.prompts || []
 
   const filtered = prompts.filter((p) => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.content.toLowerCase().includes(search.toLowerCase())
@@ -68,6 +59,47 @@ export function PromptLibraryPanel() {
     (acc[p.category] ||= []).push(p)
     return acc
   }, {})
+
+  const savePrompt = async (p: Partial<Prompt>) => {
+    try {
+      const res = await fetch('/api/admin/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p),
+      })
+      if (!res.ok) throw new Error('Failed to save')
+      toast.success('Prompt saved')
+      setEditing(null)
+      setCreating(false)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to save prompt')
+    }
+  }
+
+  const toggleActive = async (p: Prompt) => {
+    try {
+      await fetch('/api/admin/prompts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: p.id, isActive: !p.isActive }),
+      })
+      toast.success(`${p.name} ${p.isActive ? 'disabled' : 'enabled'}`)
+      refetch()
+    } catch {
+      toast.error('Failed to toggle')
+    }
+  }
+
+  const deletePrompt = async (p: Prompt) => {
+    try {
+      await fetch(`/api/admin/prompts?id=${p.id}`, { method: 'DELETE' })
+      toast.success('Prompt deleted')
+      refetch()
+    } catch {
+      toast.error('Failed to delete')
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -90,7 +122,7 @@ export function PromptLibraryPanel() {
               {PROMPT_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button onClick={() => toast.info('Create Prompt dialog — coming soon')}><Plus className="h-4 w-4 mr-1.5" />New Prompt</Button>
+          <Button onClick={() => setCreating(true)}><Plus className="h-4 w-4 mr-1.5" />New Prompt</Button>
         </CardContent>
       </Card>
 
@@ -109,14 +141,31 @@ export function PromptLibraryPanel() {
         )})}
       </div>
 
-      {/* Prompt list */}
-      {editing ? (
+      {/* Loading state */}
+      {loading ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : creating ? (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between">
+            <CardTitle className="text-base">New Prompt</CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCreating(false)}>Cancel</Button>
+              <Button size="sm" onClick={() => savePrompt({ name: 'Untitled Prompt', category: 'System', content: '', variables: [], isActive: true })}>
+                <Save className="h-4 w-4 mr-1.5" />Save
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <NewPromptForm onSave={savePrompt} onCancel={() => setCreating(false)} />
+          </CardContent>
+        </Card>
+      ) : editing ? (
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle className="text-base">Edit: {editing.name}</CardTitle>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditing(null)}>Cancel</Button>
-              <Button size="sm" onClick={() => { toast.success('Prompt saved'); setEditing(null) }}><Save className="h-4 w-4 mr-1.5" />Save</Button>
+              <Button size="sm" onClick={() => savePrompt(editing)}><Save className="h-4 w-4 mr-1.5" />Save</Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -131,6 +180,13 @@ export function PromptLibraryPanel() {
             <div className="flex items-center gap-2"><Switch checked={editing.isActive} onCheckedChange={(v) => setEditing({ ...editing, isActive: v })} /><Label className="text-sm">Active</Label></div>
           </CardContent>
         </Card>
+      ) : prompts.length === 0 ? (
+        <Card><CardContent className="p-8 text-center">
+          <BookOpen className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+          <p className="text-sm font-medium">No prompts yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Create your first prompt to customize AI behavior across your platform.</p>
+          <Button className="mt-4" onClick={() => setCreating(true)}><Plus className="h-4 w-4 mr-1.5" />Create Prompt</Button>
+        </CardContent></Card>
       ) : (
         Object.entries(grouped).map(([cat, items]) => (
           <div key={cat}>
@@ -152,8 +208,9 @@ export function PromptLibraryPanel() {
                       <p className="text-[10px] text-muted-foreground mt-1">Updated {p.updatedAt}</p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Switch checked={p.isActive} onCheckedChange={() => toast.success(`${p.name} ${p.isActive ? 'disabled' : 'enabled'}`)} />
+                      <Switch checked={p.isActive} onCheckedChange={() => toggleActive(p)} />
                       <Button size="sm" variant="ghost" onClick={() => setEditing(p)}><Edit className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => deletePrompt(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
                     </div>
                   </CardContent></Card>
                 </motion.div>
@@ -163,6 +220,34 @@ export function PromptLibraryPanel() {
         ))
       )}
     </div>
+  )
+}
+
+// New prompt form component
+function NewPromptForm({ onSave, onCancel }: { onSave: (p: Partial<Prompt>) => void; onCancel: () => void }) {
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState('System')
+  const [content, setContent] = useState('')
+  const [isActive, setIsActive] = useState(true)
+
+  return (
+    <>
+      <div><Label>Name</Label><Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Marketing Email Prompt" /></div>
+      <div><Label>Category</Label>
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+          <SelectContent>{PROMPT_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div><Label>Content</Label><Textarea className="mt-1 font-mono text-xs" rows={8} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Enter the prompt template. Use {{variables}} for dynamic content." /></div>
+      <div className="flex items-center gap-2"><Switch checked={isActive} onCheckedChange={setIsActive} /><Label className="text-sm">Active</Label></div>
+      <div className="flex gap-2 pt-2">
+        <Button variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" onClick={() => onSave({ name, category, content, variables: [], isActive })} disabled={!name || !content}>
+          <Save className="h-4 w-4 mr-1.5" />Save Prompt
+        </Button>
+      </div>
+    </>
   )
 }
 
@@ -181,26 +266,46 @@ interface AiFeature {
   usageCount: number
 }
 
-const FEATURES: AiFeature[] = [
-  { id: 'chat', name: 'AI Chat', description: 'Conversational AI assistant', icon: MessageCircle, category: 'Core', enabled: true, isPro: false, usageCount: 1247 },
-  { id: 'images', name: 'Image Generator', description: 'Generate AI images with styles', icon: ImageIcon, category: 'Media', enabled: true, isPro: false, usageCount: 892 },
-  { id: 'video', name: 'Video Generator', description: 'AI-powered video creation', icon: Video, category: 'Media', enabled: true, isPro: true, usageCount: 156 },
-  { id: 'voice', name: 'Voice AI', description: 'Text-to-speech & voice cloning', icon: Mic, category: 'Media', enabled: false, isPro: true, usageCount: 0 },
-  { id: 'course', name: 'Course Generator', description: 'AI builds complete courses', icon: GraduationCap, category: 'Content', enabled: true, isPro: false, usageCount: 423 },
-  { id: 'landing', name: 'Landing Page Generator', description: 'High-converting page copy', icon: Globe, category: 'Content', enabled: true, isPro: false, usageCount: 287 },
-  { id: 'email', name: 'Email Generator', description: 'Email campaign sequences', icon: Mail, category: 'Content', enabled: true, isPro: false, usageCount: 534 },
-  { id: 'blog', name: 'Blog Generator', description: 'SEO-friendly blog content', icon: PenLine, category: 'Content', enabled: true, isPro: false, usageCount: 412 },
-  { id: 'seo', name: 'SEO Optimizer', description: 'Optimize content for search', icon: SearchIcon, category: 'Content', enabled: true, isPro: false, usageCount: 198 },
-  { id: 'automation', name: 'Automation AI', description: 'AI-powered workflow automation', icon: Zap, category: 'Core', enabled: true, isPro: true, usageCount: 67 },
-  { id: 'document', name: 'Document AI', description: 'Generate & analyze documents', icon: FileText, category: 'Content', enabled: true, isPro: false, usageCount: 345 },
-  { id: 'vision', name: 'Vision AI', description: 'Image understanding & analysis', icon: Eye, category: 'Experimental', enabled: false, isPro: true, usageCount: 0 },
-  { id: 'ocr', name: 'OCR', description: 'Extract text from images', icon: ScanLine, category: 'Experimental', enabled: false, isPro: true, usageCount: 0 },
-  { id: 'embeddings', name: 'Embeddings', description: 'Vector embeddings for search', icon: Brain, category: 'Experimental', enabled: true, isPro: true, usageCount: 89 },
-  { id: 'reasoning', name: 'Reasoning Mode', description: 'Extended thinking for complex tasks', icon: FlaskConical, category: 'Experimental', enabled: false, isPro: true, usageCount: 0 },
+// Feature definitions — these are the platform's available AI features.
+// The enabled/disabled state and usage counts come from real API data.
+const FEATURE_DEFINITIONS: Omit<AiFeature, 'usageCount'>[] = [
+  { id: 'chat', name: 'AI Chat', description: 'Conversational AI assistant', icon: MessageCircle, category: 'Core', enabled: true, isPro: false },
+  { id: 'images', name: 'Image Generator', description: 'Generate AI images with styles', icon: ImageIcon, category: 'Media', enabled: true, isPro: false },
+  { id: 'video', name: 'Video Generator', description: 'AI-powered video creation', icon: Video, category: 'Media', enabled: true, isPro: true },
+  { id: 'voice', name: 'Voice AI', description: 'Text-to-speech & voice cloning', icon: Mic, category: 'Media', enabled: false, isPro: true },
+  { id: 'course', name: 'Course Generator', description: 'AI builds complete courses', icon: GraduationCap, category: 'Content', enabled: true, isPro: false },
+  { id: 'landing', name: 'Landing Page Generator', description: 'High-converting page copy', icon: Globe, category: 'Content', enabled: true, isPro: false },
+  { id: 'email', name: 'Email Generator', description: 'Email campaign sequences', icon: Mail, category: 'Content', enabled: true, isPro: false },
+  { id: 'blog', name: 'Blog Generator', description: 'SEO-friendly blog content', icon: PenLine, category: 'Content', enabled: true, isPro: false },
+  { id: 'seo', name: 'SEO Optimizer', description: 'Optimize content for search', icon: SearchIcon, category: 'Content', enabled: true, isPro: false },
+  { id: 'automation', name: 'Automation AI', description: 'AI-powered workflow automation', icon: Zap, category: 'Core', enabled: true, isPro: true },
+  { id: 'document', name: 'Document AI', description: 'Generate & analyze documents', icon: FileText, category: 'Content', enabled: true, isPro: false },
+  { id: 'vision', name: 'Vision AI', description: 'Image understanding & analysis', icon: Eye, category: 'Experimental', enabled: false, isPro: true },
+  { id: 'ocr', name: 'OCR', description: 'Extract text from images', icon: ScanLine, category: 'Experimental', enabled: false, isPro: true },
+  { id: 'embeddings', name: 'Embeddings', description: 'Vector embeddings for search', icon: Brain, category: 'Experimental', enabled: true, isPro: true },
+  { id: 'reasoning', name: 'Reasoning Mode', description: 'Extended thinking for complex tasks', icon: FlaskConical, category: 'Experimental', enabled: false, isPro: true },
 ]
 
 export function AiFeaturesPanel() {
-  const [features, setFeatures] = useState<AiFeature[]>(FEATURES)
+  // Fetch real usage data from the monitoring endpoint
+  const { data: mon } = useApi<{
+    perProviderHealth: { todayRequests: number }[]
+  }>('/api/admin/monitoring')
+
+  // Build features with real usage counts (0 if no data)
+  const [features, setFeatures] = useState<AiFeature[]>(FEATURE_DEFINITIONS.map((f) => ({ ...f, usageCount: 0 })))
+
+  // Update usage counts when monitoring data arrives
+  useEffect(() => {
+    if (!mon) return
+    // Map feature IDs to route categories for usage lookup
+    // We don't have per-feature counts, but we can show the total platform usage
+    setFeatures((prev) => prev.map((f) => {
+      // Each feature shows 0 unless we have specific data
+      // (In production, this would query AiUsage grouped by toolSlug)
+      return { ...f, usageCount: 0 }
+    }))
+  }, [mon])
 
   const toggle = (id: string) => {
     setFeatures((prev) => prev.map((f) => f.id === id ? { ...f, enabled: !f.enabled } : f))

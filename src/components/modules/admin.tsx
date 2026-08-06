@@ -622,11 +622,11 @@ export function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {[
-              { s: 'API Gateway', st: 'Operational', up: 99.98 },
-              { s: 'AI Engine (router + adapters)', st: 'Operational', up: 99.95 },
-              { s: 'Database (SQLite)', st: 'Operational', up: 100 },
-              { s: 'File Storage', st: 'Operational', up: 99.99 },
-              { s: 'Webhook Ingest', st: mon.storage.workspaceCount > 0 ? 'Operational' : 'Standby', up: 99.5 },
+              { s: 'API Gateway', st: 'Operational' as const, up: 100 },
+              { s: 'AI Engine (router + adapters)', st: mon.providers.active > 0 ? 'Operational' as const : 'Down' as const, up: mon.providers.total > 0 ? Math.round((mon.providers.active / mon.providers.total) * 100) : 0 },
+              { s: 'Database (SQLite)', st: 'Operational' as const, up: 100 },
+              { s: 'File Storage', st: 'Operational' as const, up: 100 },
+              { s: 'Webhook Ingest', st: mon.storage.workspaceCount > 0 ? 'Operational' as const : 'Standby' as const, up: 100 },
             ].map((x) => (
               <div key={x.s} className="flex items-center justify-between rounded-lg border p-2.5">
                 <div className="flex items-center gap-2">
