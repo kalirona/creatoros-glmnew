@@ -5,7 +5,7 @@ import {
   ShieldCheck, Server, Cpu, KeyRound, Database, Activity, DollarSign,
   LineChart, Lock, ToggleLeft, Layers, Zap, History, Settings2, Sliders,
   Loader2, Eye, EyeOff, Check, AlertCircle, AlertTriangle, RefreshCw, Save,
-  Plus, Filter, Search, ChevronLeft, ChevronRight, Globe, Boxes, Gauge,
+  Plus, Filter, Search, ChevronLeft, ChevronRight, ChevronDown, Globe, Boxes, Gauge,
   Rocket, FileText, ListChecks, HardDrive, Clock, TrendingUp, TrendingDown,
   CircleDot, Wifi, WifiOff, UserCheck, Coins, BarChart3, ShieldAlert,
   KeySquare, ArrowRightLeft, ClipboardList, PlayCircle, XCircle, Eye as EyeIcon,
@@ -2875,6 +2875,7 @@ export function ModelsPanel() {
 function ApprovedModelsPanel() {
   const { data, loading, refetch } = useApi<{ models: any[] }>('/api/admin/approved-models')
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [showDisabled, setShowDisabled] = useState(false)
 
   const toggleField = async (m: any, field: 'isEnabled' | 'isDefault', v: boolean) => {
     setTogglingId(m.id)
@@ -2892,7 +2893,18 @@ function ApprovedModelsPanel() {
 
   if (loading || !data) return <LoadingBlock />
 
-  const grouped = data.models.reduce<Record<string, any[]>>((acc, m) => {
+  // Split models into enabled and disabled
+  const enabledModels = data.models.filter((m) => m.isEnabled)
+  const disabledModels = data.models.filter((m) => !m.isEnabled)
+
+  // Group enabled models by modality
+  const enabledGrouped = enabledModels.reduce<Record<string, any[]>>((acc, m) => {
+    (acc[m.modality] ||= []).push(m)
+    return acc
+  }, {})
+
+  // Group disabled models by modality
+  const disabledGrouped = disabledModels.reduce<Record<string, any[]>>((acc, m) => {
     (acc[m.modality] ||= []).push(m)
     return acc
   }, {})
@@ -2903,9 +2915,9 @@ function ApprovedModelsPanel() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { l: 'Approved Models', v: data.models.length, i: CheckCircle2 },
-          { l: 'Enabled', v: data.models.filter((m) => m.isEnabled).length, i: Check },
-          { l: 'Defaults Set', v: new Set(data.models.filter((m) => m.isDefault).map((m) => m.modality)).size, i: Star },
-          { l: 'Modalities', v: Object.keys(grouped).length, i: Cpu },
+          { l: 'Enabled', v: enabledModels.length, i: Check },
+          { l: 'Disabled', v: disabledModels.length, i: XCircle },
+          { l: 'Defaults Set', v: new Set(enabledModels.filter((m) => m.isDefault).map((m) => m.modality)).size, i: Star },
         ].map((s) => { const Icon = s.i; return (
           <Card key={s.l}><CardContent className="p-3 flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"><Icon className="h-4 w-4" /></div>
@@ -2921,78 +2933,158 @@ function ApprovedModelsPanel() {
           <p className="text-xs text-muted-foreground mt-1">Go to the Provider Catalog to review and approve models for your creators.</p>
         </CardContent></Card>
       ) : (
-        Object.entries(grouped).map(([modality, items]) => (
-          <div key={modality}>
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{modality}</p>
-              <Badge variant="secondary" className="text-[9px]">{items.length}</Badge>
-              {items.filter((m) => m.isDefault).length === 0 && (
-                <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">No default set</Badge>
+        <>
+          {/* ── ENABLED MODELS (primary view) ─────────────────────────────── */}
+          {enabledModels.length === 0 ? (
+            <Card><CardContent className="p-8 text-center">
+              <Check className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+              <p className="text-sm font-medium">No models enabled</p>
+              <p className="text-xs text-muted-foreground mt-1">Enable a model below or approve new ones from the Provider Catalog.</p>
+            </CardContent></Card>
+          ) : (
+            Object.entries(enabledGrouped).map(([modality, items]) => (
+              <div key={modality}>
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{modality}</p>
+                  <Badge variant="secondary" className="text-[9px] bg-emerald-500/10 text-emerald-600">{items.length} enabled</Badge>
+                  {items.filter((m) => m.isDefault).length === 0 && (
+                    <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">No default set</Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {items.map((m, i) => (
+                    <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.2) }}>
+                      <Card className="border-emerald-500/20">
+                        <CardContent className="p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{m.displayName}</p>
+                              <code className="text-[10px] text-muted-foreground">{m.modelId}</code>
+                            </div>
+                            {m.isDefault && (
+                              <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 shrink-0">
+                                <Star className="h-2.5 w-2.5 mr-0.5 fill-amber-500" /> Default
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Badge variant="secondary" className="text-[9px] bg-muted">
+                              {m.providerName || m.provider?.name}
+                            </Badge>
+                            {m.supportsVision && <Badge variant="secondary" className="text-[8px] bg-sky-500/10 text-sky-600">Vision</Badge>}
+                            {m.supportsReasoning && <Badge variant="secondary" className="text-[8px] bg-violet-500/10 text-violet-600">Reasoning</Badge>}
+                            {m.supportsToolCalling && <Badge variant="secondary" className="text-[8px] bg-emerald-500/10 text-emerald-600">Tools</Badge>}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
+                            <div>In: <span className="font-mono text-foreground">${m.inputCostPer1k}/1k</span></div>
+                            <div>Out: <span className="font-mono text-foreground">${m.outputCostPer1k}/1k</span></div>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={m.isEnabled}
+                                disabled={togglingId === m.id}
+                                onCheckedChange={(v) => toggleField(m, 'isEnabled', v)}
+                              />
+                              <span className="text-[10px] text-emerald-600 font-medium">Enabled</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground">Default</span>
+                              <Switch
+                                checked={m.isDefault}
+                                disabled={togglingId === m.id || !m.isEnabled}
+                                onCheckedChange={(v) => toggleField(m, 'isDefault', v)}
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1.5"
+                              disabled={togglingId === m.id}
+                              onClick={() => removeModel(m)}
+                              title="Remove from approved (creators will no longer see this model)"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* ── DISABLED MODELS (hidden behind toggle) ───────────────────── */}
+          {disabledModels.length > 0 && (
+            <div className="pt-4">
+              <button
+                onClick={() => setShowDisabled(!showDisabled)}
+                className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {showDisabled ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <span>Disabled Models ({disabledModels.length})</span>
+                <Badge variant="secondary" className="text-[9px] bg-muted">{disabledModels.length}</Badge>
+              </button>
+
+              {showDisabled && (
+                <div className="mt-3 space-y-3 opacity-60">
+                  {Object.entries(disabledGrouped).map(([modality, items]) => (
+                    <div key={modality}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{modality}</p>
+                        <Badge variant="secondary" className="text-[9px] bg-muted text-muted-foreground">{items.length} disabled</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {items.map((m) => (
+                          <Card key={m.id}>
+                            <CardContent className="p-3 space-y-2">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">{m.displayName}</p>
+                                  <code className="text-[10px] text-muted-foreground">{m.modelId}</code>
+                                </div>
+                                <Badge variant="secondary" className="text-[9px] bg-muted text-muted-foreground shrink-0">
+                                  Disabled
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Badge variant="secondary" className="text-[9px] bg-muted">
+                                  {m.providerName || m.provider?.name}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t">
+                                <div className="flex items-center gap-2">
+                                  <Switch
+                                    checked={m.isEnabled}
+                                    disabled={togglingId === m.id}
+                                    onCheckedChange={(v) => toggleField(m, 'isEnabled', v)}
+                                  />
+                                  <span className="text-[10px] text-muted-foreground">Enable</span>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-1.5"
+                                  disabled={togglingId === m.id}
+                                  onClick={() => removeModel(m)}
+                                  title="Remove from approved"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {items.map((m, i) => (
-                <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.2) }}>
-                  <Card className={cn(!m.isEnabled && 'opacity-60')}>
-                    <CardContent className="p-3 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{m.displayName}</p>
-                          <code className="text-[10px] text-muted-foreground">{m.modelId}</code>
-                        </div>
-                        {m.isDefault && (
-                          <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 shrink-0">
-                            <Star className="h-2.5 w-2.5 mr-0.5 fill-amber-500" /> Default
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <Badge variant="secondary" className="text-[9px] bg-muted">
-                          {m.providerName || m.provider?.name}
-                        </Badge>
-                        {m.supportsVision && <Badge variant="secondary" className="text-[8px] bg-sky-500/10 text-sky-600">Vision</Badge>}
-                        {m.supportsReasoning && <Badge variant="secondary" className="text-[8px] bg-violet-500/10 text-violet-600">Reasoning</Badge>}
-                        {m.supportsToolCalling && <Badge variant="secondary" className="text-[8px] bg-emerald-500/10 text-emerald-600">Tools</Badge>}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
-                        <div>In: <span className="font-mono text-foreground">${m.inputCostPer1k}/1k</span></div>
-                        <div>Out: <span className="font-mono text-foreground">${m.outputCostPer1k}/1k</span></div>
-                      </div>
-                      <div className="flex items-center justify-between pt-1 border-t">
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={m.isEnabled}
-                            disabled={togglingId === m.id}
-                            onCheckedChange={(v) => toggleField(m, 'isEnabled', v)}
-                          />
-                          <span className="text-[10px] text-muted-foreground">Enabled</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-muted-foreground">Default</span>
-                          <Switch
-                            checked={m.isDefault}
-                            disabled={togglingId === m.id || !m.isEnabled}
-                            onCheckedChange={(v) => toggleField(m, 'isDefault', v)}
-                          />
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 px-1.5"
-                          disabled={togglingId === m.id}
-                          onClick={() => removeModel(m)}
-                          title="Remove from approved (creators will no longer see this model)"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        ))
+          )}
+        </>
       )}
     </div>
   )
