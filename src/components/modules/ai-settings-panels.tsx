@@ -287,30 +287,41 @@ const FEATURE_DEFINITIONS: Omit<AiFeature, 'usageCount'>[] = [
 ]
 
 export function AiFeaturesPanel() {
-  // Fetch real usage data from the monitoring endpoint
-  const { data: mon } = useApi<{
-    perProviderHealth: { todayRequests: number }[]
-  }>('/api/admin/monitoring')
+  // Fetch real feature settings from the database
+  const { data, loading, refetch } = useApi<{ features: Record<string, boolean> }>('/api/admin/ai-features')
 
-  // Build features with real usage counts (0 if no data)
-  const [features, setFeatures] = useState<AiFeature[]>(FEATURE_DEFINITIONS.map((f) => ({ ...f, usageCount: 0 })))
+  // Build features list from API data
+  const features: AiFeature[] = FEATURE_DEFINITIONS.map((f) => ({
+    ...f,
+    usageCount: 0,
+    enabled: data?.features?.[f.id] ?? f.enabled,
+  }))
 
-  // Update usage counts when monitoring data arrives
-  useEffect(() => {
-    if (!mon) return
-    // Map feature IDs to route categories for usage lookup
-    // We don't have per-feature counts, but we can show the total platform usage
-    setFeatures((prev) => prev.map((f) => {
-      // Each feature shows 0 unless we have specific data
-      // (In production, this would query AiUsage grouped by toolSlug)
-      return { ...f, usageCount: 0 }
-    }))
-  }, [mon])
-
-  const toggle = (id: string) => {
-    setFeatures((prev) => prev.map((f) => f.id === id ? { ...f, enabled: !f.enabled } : f))
+  const toggle = async (id: string) => {
     const f = features.find((x) => x.id === id)
-    if (f) toast.success(`${f.name} ${f.enabled ? 'disabled' : 'enabled'}`)
+    if (!f) return
+    const newValue = !f.enabled
+    try {
+      const res = await fetch('/api/admin/ai-features', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ featureId: id, enabled: newValue }),
+      })
+      if (!res.ok) throw new Error('Failed to update')
+      toast.success(`${f.name} ${newValue ? 'enabled' : 'disabled'}`)
+      refetch()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to toggle feature')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-20 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+    )
   }
 
   const grouped = features.reduce<Record<string, AiFeature[]>>((acc, f) => {

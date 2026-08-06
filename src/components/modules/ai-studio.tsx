@@ -276,6 +276,7 @@ export function AiStudioModule() {
   const { activeSubTab, navigateTo } = useAppStore()
   const [tab, setTab] = useState<StudioTab>('dashboard')
   const [credits, setCredits] = useState(4280)
+  const [featureSettings, setFeatureSettings] = useState<Record<string, boolean> | null>(null)
 
   useEffect(() => {
     if (activeSubTab && ALL_TABS.includes(activeSubTab as StudioTab)) {
@@ -284,13 +285,40 @@ export function AiStudioModule() {
     }
   }, [activeSubTab])
 
-  // Best-effort load of the user's current credit balance.
+  // Best-effort load of the user's current credit balance + feature settings
   useEffect(() => {
     fetch('/api/ai/dashboard')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d && typeof d.creditsRemaining === 'number') setCredits(d.creditsRemaining) })
       .catch(() => {})
+    // Load AI feature settings to show/hide tabs
+    fetch('/api/ai/features')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.features) setFeatureSettings(d.features) })
+      .catch(() => {})
   }, [])
+
+  // Map AI Studio tabs to feature IDs
+  const TAB_FEATURE_MAP: Record<StudioTab, string | null> = {
+    dashboard: null, // always show
+    chat: 'chat',
+    documents: 'document',
+    images: 'images',
+    videos: 'video',
+    courses: 'course',
+    marketing: 'email',
+    'media-library': null, // always show
+    history: null, // always show
+    settings: null, // always show
+  }
+
+  // Filter tabs based on feature settings (null = always show)
+  const visibleTabs = TABS.filter((t) => {
+    const featureId = TAB_FEATURE_MAP[t.id]
+    if (!featureId) return true // always show
+    if (!featureSettings) return true // not loaded yet — show all
+    return featureSettings[featureId] !== false // show unless explicitly disabled
+  })
 
   return (
     <div className="space-y-5">
@@ -323,7 +351,7 @@ export function AiStudioModule() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as StudioTab)}>
         <div className="overflow-x-auto scroll-thin pb-1">
           <TabsList className="flex h-auto gap-1">
-            {TABS.map((t) => {
+            {visibleTabs.map((t) => {
               const Icon = t.icon
               return (
                 <TabsTrigger key={t.id} value={t.id} className="text-sm gap-2 px-4 py-2">

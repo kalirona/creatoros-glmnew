@@ -1876,3 +1876,52 @@ Work Log:
 - Verified image generation works: tested via API — returns asset with base64 URL
 - Lint: 0 errors
 - TypeScript: 0 errors
+
+---
+Task ID: FIX-PREVIEW-FEATURES
+Agent: Main (Z.ai Code)
+Task: Fix preview + make AI Features settings control AI Studio tabs
+
+Work Log:
+- Issue 1: "Preview not working" — the dev server was dying due to OOM in sandbox. The gateway (port 81) and app (port 3000) both work when the server is up. Verified: HTTP 200 on both ports when server is running.
+
+- Issue 2: "AI features settings must show to enable/disable AI Studio features"
+  * Created /api/admin/ai-features/route.ts (GET + PUT):
+    - GET: returns feature settings from AdminSetting (key='ai_features')
+    - PUT: updates a single feature's enabled state, persists to DB
+    - 15 features: chat, images, video, voice, course, landing, email, blog, seo, automation, document, vision, ocr, embeddings, reasoning
+    - Defaults: most enabled, voice/vision/ocr/reasoning disabled by default
+  
+  * Created /api/ai/features/route.ts (GET — creator-facing):
+    - Returns same feature settings (read-only for creators)
+    - AI Studio fetches this on mount to determine which tabs to show
+  
+  * Updated AiFeaturesPanel (ai-settings-panels.tsx):
+    - OLD: used local useState only — toggles didn't persist
+    - NEW: fetches from /api/admin/ai-features, toggles call PUT to persist
+    - Shows loading skeleton while fetching
+    - Toast on toggle success/error
+    - refetch() after toggle to update UI
+  
+  * Updated AiStudioModule (ai-studio.tsx):
+    - Fetches /api/ai/features on mount
+    - Added TAB_FEATURE_MAP: maps each AI Studio tab to a feature ID
+      - dashboard, media-library, history, settings → always show (null)
+      - chat → 'chat', documents → 'document', images → 'images', videos → 'video'
+      - courses → 'course', marketing → 'email'
+    - Filters visibleTabs based on featureSettings
+    - If featureSettings not loaded yet → show all (avoid flash of hidden tabs)
+    - If feature explicitly disabled → tab hidden from AI Studio
+    - When admin toggles a feature in AI Settings → AI Studio immediately reflects on next load
+
+- Flow verified:
+  1. Super Admin goes to AI Settings → AI Features tab
+  2. Toggles "Video Generator" OFF
+  3. PUT /api/admin/ai-features { featureId: 'video', enabled: false }
+  4. Setting persisted to AdminSetting (key='ai_features')
+  5. Creator loads AI Studio → GET /api/ai/features → video=false
+  6. Videos tab not shown in AI Studio
+  7. Admin toggles "Video Generator" ON → tab reappears
+
+- Lint: 0 errors
+- TypeScript: 0 errors
