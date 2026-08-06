@@ -1539,3 +1539,89 @@ Stage Summary:
 - No dead toggles (Active toggle has providerStatus guard, Default toggle has per-modality enforcement)
 - Test button per model sends real request and updates verification status
 - PHASE X COMPLETE
+
+---
+Task ID: PHASE-X-REDESIGN
+Agent: Main (Z.ai Code)
+Task: PHASE X — Redesign AI Model Management (Enterprise Architecture) — Separate Provider Catalog from Approved Models
+
+Work Log:
+- Created ApprovedModel table in schema (completely separate from AiModel):
+  * Fields: id, providerId, providerModelId, providerName, providerSlug, modelId, displayName, modality
+  * Admin config: isDefault, isEnabled, workspaceVisible, priority, creditsMultiplier
+  * Capability snapshot: supportsVision/Image/Audio/Video/Embeddings/Streaming/Json/ToolCalling/Reasoning, contextWindow, inputCostPer1k, outputCostPer1k
+  * Audit: approvedBy, approvedAt, createdAt, updatedAt
+  * Unique constraint: [providerId, modelId] (one approved entry per provider+model)
+  * Indexes: [modality, isDefault], [modality, isEnabled, workspaceVisible], [priority]
+- Refactored syncProviderModels() to ONLY update AiModel (Provider Catalog):
+  * New models: isActive=false (NEVER auto-enabled — admin must approve via Review Screen)
+  * Existing models: preserve admin's isActive choice
+  * Removed models: mark providerStatus='unavailable' (keep history, don't delete)
+  * ApprovedModel table is NEVER touched by sync
+  * Count of approved models returned as modelsEnabled
+- Created /api/admin/approved-models/route.ts (GET/POST/PUT/DELETE):
+  * GET: list approved models with filters (modality, isEnabled, workspaceVisible)
+  * POST: approve a model from Provider Catalog (copies capability flags from AiModel to ApprovedModel)
+  * PUT: update approved model (enable/disable, set default with per-modality enforcement, update display name, priority, creditsMultiplier)
+  * DELETE: remove from approved catalog (creators no longer see it)
+  * All mutations call invalidateRouteCache()
+- Rewrote routing engine (router.ts) to use ApprovedModel table:
+  * resolveRoute() now queries ApprovedModel where isEnabled=true AND workspaceVisible=true
+  * Provider must be active + healthy AND have approved models for the needed modality
+  * Falls back to fallback provider's approved models
+  * Global fallback: finds any active+healthy provider with approved models for the modality
+  * No longer reads AiModel.isActive or providerStatus for routing
+- Rebuilt ModelsPanel in admin.tsx with two-tab architecture:
+  * Info banner explaining: "Provider Catalog mirrors all models (read-only). Approved Models are what creators see."
+  * "Approved Models" tab (default): shows creator-facing catalog with Enable/Disable/Default toggles, grouped by modality
+  * "Provider Catalog" tab: review screen with search, filters (provider, modality), bulk actions (Approve All Visible, Approve Chat/Image/Video Models), pagination (50 per page), Approve button per model
+- Approved Models tab features:
+  * Stats: Approved Models count, Enabled count, Defaults Set count, Modalities count
+  * Grouped by modality (TEXT, IMAGE, VIDEO, etc.)
+  * Each card shows: name, model ID, provider, capability badges, cost, Enabled toggle, Default toggle, Remove button
+  * Empty state: "No models approved yet — go to Provider Catalog to review and approve"
+  * "No default set" warning badge when a modality has no default
+- Provider Catalog tab features:
+  * Stats: Catalog Models, Approved, Available, Unavailable counts
+  * Search bar (client-side filter)
+  * Provider filter dropdown
+  * Modality filter dropdown
+  * Bulk actions: Approve All Visible, Approve Chat Models, Approve Image Models, Approve Video Models
+  * Paginated model list (50 per page) with: name, status badge, model ID, modality, provider, capability badges (V/R/T/J), cost, Approve button
+  * Approved models show "In Catalog" badge instead of Approve button
+  * Unavailable models: Approve button disabled
+
+Browser-Verified:
+- ✅ Models page shows two-tab architecture: "Approved Models" | "Provider Catalog"
+- ✅ Info banner explains the separation
+- ✅ Approved Models tab: shows 1 approved model (GLM-4 Flash) with Default badge, Enabled/Default toggles
+- ✅ Provider Catalog tab: shows 363 catalog models with search, filters, bulk actions, pagination
+- ✅ Each catalog model has Approve button (or "In Catalog" badge if already approved)
+- ✅ Sync returns enabled=0 (no auto-enable)
+- ✅ Approving a model creates ApprovedModel entry (verified via API)
+- ✅ Setting default unsets other defaults for same modality (verified: GLM-4 Flash default unset GLM-4 Plus)
+- ✅ Deleting approved model removes it from creator catalog (verified: count went from 2 to 1)
+- ✅ Routing engine reads ApprovedModel (8 references to approvedModel in router.ts)
+- ✅ No hardcoded MODEL_CATALOG
+
+API-Verified:
+- ✅ POST /api/admin/approved-models { providerModelId } → creates ApprovedModel, action='approved'
+- ✅ PUT /api/admin/approved-models { id, isDefault: true } → sets default, unsets others for same modality
+- ✅ DELETE /api/admin/approved-models?id=X → removes from approved catalog
+- ✅ GET /api/admin/approved-models?modality=TEXT&isEnabled=true → returns only enabled TEXT models
+- ✅ Sync: found=3, enabled=0 (no auto-enable)
+
+Stage Summary:
+- Lint: 0 errors
+- TypeScript: 0 errors
+- Server: HTTP 200
+- Provider Catalog (AiModel) and Approved Models (ApprovedModel) are separate tables
+- Sync never auto-imports every provider model into creator configuration
+- Active toggle persists to database (ApprovedModel.isEnabled) and routing
+- Disabled models never appear in Creator UI (routing only reads ApprovedModel)
+- Only Super Admin-approved models are available to workspaces
+- One default model per capability (modality) — enforced in PUT handler
+- No dead buttons (Approve, Enable, Disable, Default, Remove all work)
+- No hardcoded/demo models (MODEL_CATALOG removed)
+- Existing AI features continue working (routing uses ApprovedModel, image gen via z.ai SDK preserved)
+- PHASE X REDESIGN COMPLETE

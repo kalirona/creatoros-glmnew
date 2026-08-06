@@ -634,6 +634,7 @@ model AiProvider {
   webhooks        AiWebhook[]
   healthChecks    AiProviderHealth[]
   syncHistory     AiProviderSyncHistory[]
+  approvedModels  ApprovedModel[]
 }
 
 model AiModel {
@@ -689,6 +690,61 @@ model AiModel {
   @@index([modality, isActive])
   @@index([providerStatus])
   @@unique([providerId, name])
+}
+
+// ===== ApprovedModel — the creator-facing catalog ──────────────────────────
+// This is SEPARATE from AiModel (which is the Provider Catalog).
+// AiModel mirrors what the provider returns (read-only).
+// ApprovedModel is what the Super Admin has chosen to expose to creators.
+// Only this table powers the Creator UI and the routing engine.
+//
+// Flow:
+//   Provider API → AiModel (Provider Catalog, read-only)
+//   Super Admin reviews → enables specific models
+//   Enabled models → ApprovedModel (creator-facing catalog)
+//   Routing engine + Creator UI → only reads ApprovedModel
+
+model ApprovedModel {
+  id                String   @id @default(cuid())
+  providerId        String   // links to AiProvider
+  providerModelId   String   // links to AiModel.id (the provider catalog entry)
+  // Denormalized for fast creator queries (avoid joins)
+  providerName      String   @default("")
+  providerSlug      String   @default("")
+  modelId           String   @default("")  // the provider's model ID (e.g. "deepseek/deepseek-chat")
+  displayName       String   // admin can override the display name
+  modality          String   @default("TEXT") // TEXT | IMAGE | VIDEO | AUDIO | EMBEDDING | STT | TTS | VISION
+  // Admin configuration
+  isDefault         Boolean  @default(false)  // ONE default per modality
+  isEnabled         Boolean  @default(true)   // admin can disable without deleting
+  workspaceVisible  Boolean  @default(true)   // visible to creators
+  priority          Int      @default(100)    // lower = higher priority in routing
+  creditsMultiplier Float    @default(1.0)    // multiply credit cost for this model
+  // Snapshot of capability flags (copied from AiModel at approval time)
+  supportsVision      Boolean @default(false)
+  supportsImage       Boolean @default(false)
+  supportsAudio       Boolean @default(false)
+  supportsVideo       Boolean @default(false)
+  supportsEmbeddings  Boolean @default(false)
+  supportsStreaming   Boolean @default(true)
+  supportsJson        Boolean @default(false)
+  supportsToolCalling Boolean @default(false)
+  supportsReasoning   Boolean @default(false)
+  contextWindow       Int     @default(128000)
+  inputCostPer1k      Float   @default(0)
+  outputCostPer1k     Float   @default(0)
+  // Audit
+  approvedBy         String?  @default("")   // admin user who approved
+  approvedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  provider           AiProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelId])  // one approved entry per provider+model
+  @@index([modality, isDefault])
+  @@index([modality, isEnabled, workspaceVisible])
+  @@index([priority])
 }
 
 model AiProviderKey {

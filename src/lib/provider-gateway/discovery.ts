@@ -685,13 +685,16 @@ export async function validateProviderKey(
   }
 }
 
-// ─── Sync models to database (from REAL provider API response) ─────────────
+// ─── Sync models to database (Provider Catalog only — NO auto-enable) ──────
+// This function ONLY updates the AiModel table (Provider Catalog).
+// It does NOT create ApprovedModel entries — that's a separate admin action.
+//
 // Rules:
 //   1. Only models returned by the provider are saved (no hardcoded lists)
-//   2. New models: isActive=true ONLY if providerStatus='available'
-//   3. Existing models: preserve admin's isActive choice (don't auto-re-enable)
-//   4. Removed models: mark providerStatus='unavailable', isActive=false (keep history)
-//   5. Deprecated models: providerStatus='deprecated', isActive=false
+//   2. New models: isActive=false (NOT auto-enabled — admin must approve)
+//   3. Existing models: preserve admin's isActive choice
+//   4. Removed models: mark providerStatus='unavailable' (keep history)
+//   5. ApprovedModel table is NEVER touched by sync
 
 export async function syncProviderModels(providerId: string): Promise<SyncResult> {
   const start = Date.now()
@@ -739,20 +742,23 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
   let removed = 0
   let kept = 0
   let unavailable = 0
-  let enabled = 0
-  let disabled = 0
+  let enabled = 0  // models that are approved (in ApprovedModel table)
+  let disabled = 0 // models that became unavailable
 
-  // Add or update discovered models
+  // Count existing approved models for this provider
+  const approvedCount = await db.approvedModel.count({ where: { providerId } })
+  enabled = approvedCount
+
+  // Add or update discovered models in Provider Catalog (AiModel)
   for (const d of discovered) {
-    // Determine providerStatus — default to 'available' if not specified
     const pStatus = (d as any).providerStatus || 'available'
     const isAvailable = pStatus === 'available'
     if (!isAvailable) unavailable++
 
     const existing = existingMap.get(d.id)
     if (!existing) {
-      // New model — only enable if available
-      const shouldEnable = isAvailable
+      // New model — add to Provider Catalog with isActive=false
+      // (NOT auto-enabled — admin must approve via the Review Screen)
       await db.aiModel.create({
         data: {
           providerId,
@@ -774,15 +780,12 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
           providerTags: JSON.stringify(d.tags),
           providerStatus: pStatus,
           lastSyncedAt: new Date(),
-          isActive: shouldEnable,
+          isActive: false,  // NEVER auto-enable — admin must approve
         },
       })
       added++
-      if (shouldEnable) enabled++
-      else disabled++
     } else {
-      // Existing model — update metadata but PRESERVE admin's isActive choice
-      // (don't auto-re-enable a model the admin disabled)
+      // Existing model — update metadata but PRESERVE isActive choice
       const updateData: Record<string, unknown> = {
         displayName: d.name,
         modality: d.modality,
@@ -800,17 +803,9 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
         providerStatus: pStatus,
         lastSyncedAt: new Date(),
       }
-      // Update pricing only if not custom
       if (!existing.isCustomPricing) {
         updateData.inputCostPer1k = d.inputCostPer1k
         updateData.outputCostPer1k = d.outputCostPer1k
-      }
-      // If model became unavailable/deprecated, force-disable it
-      if (!isAvailable && existing.isActive) {
-        updateData.isActive = false
-        disabled++
-      } else if (isAvailable && existing.isActive) {
-        enabled++
       }
       await db.aiModel.update({
         where: { id: existing.id },
@@ -820,14 +815,13 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
     }
   }
 
-  // Mark removed models as unavailable + disabled (don't delete — keep history)
+  // Mark removed models as unavailable (keep history, don't delete)
   for (const [name, existing] of existingMap) {
     if (!discoveredNames.has(name) && !existing.isCustomPricing) {
       await db.aiModel.update({
         where: { id: existing.id },
         data: {
           providerStatus: 'unavailable',
-          isActive: false,
           lastSyncedAt: new Date(),
         },
       })

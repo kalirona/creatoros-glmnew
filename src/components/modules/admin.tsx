@@ -14,6 +14,7 @@ import {
   Star, ExternalLink, Terminal, Send, Play,
   CheckCircle2, Sparkles, Cable, Settings, BookOpen, Stethoscope, ServerCog,
   Plug, PlugZap, RefreshCcw, Timer, Workflow, Building2, Wrench,
+  Info, Trash2, MessageCircle,
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -2739,132 +2740,404 @@ export function ApiKeysPanel() {
  * ========================================================================== */
 
 export function ModelsPanel() {
-  const [providerFilter, setProviderFilter] = useState('all')
-  const [modalityFilter, setModalityFilter] = useState('all')
-  const query = useMemo(
-    () => {
-      const params = new URLSearchParams()
-      if (providerFilter !== 'all') params.set('providerId', providerFilter)
-      if (modalityFilter !== 'all') params.set('modality', modalityFilter)
-      const q = params.toString()
-      return `/api/admin/models${q ? `?${q}` : ''}`
-    },
-    [providerFilter, modalityFilter],
+  const [tab, setTab] = useState<'approved' | 'catalog'>('approved')
+
+  return (
+    <div className="space-y-4">
+      {/* Info banner explaining the architecture */}
+      <Card className="border-amber-500/20 bg-amber-500/5">
+        <CardContent className="p-3 flex items-start gap-2.5">
+          <Info className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p><span className="font-medium text-amber-600">Provider Catalog</span> mirrors all models from connected providers (read-only).</p>
+            <p><span className="font-medium text-amber-600">Approved Models</span> are what creators see — only models you approve appear in routing and creator UI.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tab switcher */}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant={tab === 'approved' ? 'default' : 'outline'}
+          className={tab === 'approved' ? 'bg-amber-600 hover:bg-amber-700 text-white' : ''}
+          onClick={() => setTab('approved')}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" /> Approved Models
+        </Button>
+        <Button
+          size="sm"
+          variant={tab === 'catalog' ? 'default' : 'outline'}
+          className={tab === 'catalog' ? 'bg-amber-600 hover:bg-amber-700 text-white' : ''}
+          onClick={() => setTab('catalog')}
+        >
+          <Server className="h-3.5 w-3.5 mr-1.5" /> Provider Catalog
+        </Button>
+      </div>
+
+      {tab === 'approved' ? <ApprovedModelsPanel /> : <ProviderCatalogPanel />}
+    </div>
   )
-  const { data, loading, refetch } = useApi<{ models: ModelRow[] }>(query)
-  const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
-  const [adding, setAdding] = useState(false)
+}
+
+// ============================================================================
+// Approved Models Panel — the creator-facing catalog (admin-managed)
+// ============================================================================
+
+function ApprovedModelsPanel() {
+  const { data, loading, refetch } = useApi<{ models: any[] }>('/api/admin/approved-models')
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
-  const toggleField = async (m: ModelRow, field: 'isActive' | 'isDefault', v: boolean) => {
+  const toggleField = async (m: any, field: 'isEnabled' | 'isDefault', v: boolean) => {
     setTogglingId(m.id)
-    const ok = await mutate('/api/admin/models', 'PUT', { id: m.id, [field]: v }, `${m.displayName} ${field} ${v ? 'on' : 'off'}`)
+    const ok = await mutate('/api/admin/approved-models', 'PUT', { id: m.id, [field]: v }, `${m.displayName} ${field} ${v ? 'on' : 'off'}`)
+    setTogglingId(null)
+    if (ok.ok) refetch()
+  }
+
+  const removeModel = async (m: any) => {
+    setTogglingId(m.id)
+    const ok = await mutate(`/api/admin/approved-models?id=${m.id}`, 'DELETE', undefined, `${m.displayName} removed from approved`)
     setTogglingId(null)
     if (ok.ok) refetch()
   }
 
   if (loading || !data) return <LoadingBlock />
 
+  const grouped = data.models.reduce<Record<string, any[]>>((acc, m) => {
+    (acc[m.modality] ||= []).push(m)
+    return acc
+  }, {})
+
   return (
     <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { l: 'Approved Models', v: data.models.length, i: CheckCircle2 },
+          { l: 'Enabled', v: data.models.filter((m) => m.isEnabled).length, i: Check },
+          { l: 'Defaults Set', v: new Set(data.models.filter((m) => m.isDefault).map((m) => m.modality)).size, i: Star },
+          { l: 'Modalities', v: Object.keys(grouped).length, i: Cpu },
+        ].map((s) => { const Icon = s.i; return (
+          <Card key={s.l}><CardContent className="p-3 flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"><Icon className="h-4 w-4" /></div>
+            <div><p className="text-lg font-bold tabular-nums leading-none">{s.v}</p><p className="text-[10px] text-muted-foreground mt-0.5">{s.l}</p></div>
+          </CardContent></Card>
+        )})}
+      </div>
+
+      {data.models.length === 0 ? (
+        <Card><CardContent className="p-8 text-center">
+          <CheckCircle2 className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+          <p className="text-sm font-medium">No models approved yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Go to the Provider Catalog to review and approve models for your creators.</p>
+        </CardContent></Card>
+      ) : (
+        Object.entries(grouped).map(([modality, items]) => (
+          <div key={modality}>
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{modality}</p>
+              <Badge variant="secondary" className="text-[9px]">{items.length}</Badge>
+              {items.filter((m) => m.isDefault).length === 0 && (
+                <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">No default set</Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {items.map((m, i) => (
+                <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.2) }}>
+                  <Card className={cn(!m.isEnabled && 'opacity-60')}>
+                    <CardContent className="p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{m.displayName}</p>
+                          <code className="text-[10px] text-muted-foreground">{m.modelId}</code>
+                        </div>
+                        {m.isDefault && (
+                          <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600 shrink-0">
+                            <Star className="h-2.5 w-2.5 mr-0.5 fill-amber-500" /> Default
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="secondary" className="text-[9px] bg-muted">
+                          {m.providerName || m.provider?.name}
+                        </Badge>
+                        {m.supportsVision && <Badge variant="secondary" className="text-[8px] bg-sky-500/10 text-sky-600">Vision</Badge>}
+                        {m.supportsReasoning && <Badge variant="secondary" className="text-[8px] bg-violet-500/10 text-violet-600">Reasoning</Badge>}
+                        {m.supportsToolCalling && <Badge variant="secondary" className="text-[8px] bg-emerald-500/10 text-emerald-600">Tools</Badge>}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
+                        <div>In: <span className="font-mono text-foreground">${m.inputCostPer1k}/1k</span></div>
+                        <div>Out: <span className="font-mono text-foreground">${m.outputCostPer1k}/1k</span></div>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={m.isEnabled}
+                            disabled={togglingId === m.id}
+                            onCheckedChange={(v) => toggleField(m, 'isEnabled', v)}
+                          />
+                          <span className="text-[10px] text-muted-foreground">Enabled</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">Default</span>
+                          <Switch
+                            checked={m.isDefault}
+                            disabled={togglingId === m.id || !m.isEnabled}
+                            onCheckedChange={(v) => toggleField(m, 'isDefault', v)}
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5"
+                          disabled={togglingId === m.id}
+                          onClick={() => removeModel(m)}
+                          title="Remove from approved (creators will no longer see this model)"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// Provider Catalog Panel — review screen with Enable/Disable
+// ============================================================================
+
+function ProviderCatalogPanel() {
+  const [providerFilter, setProviderFilter] = useState('all')
+  const [modalityFilter, setModalityFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [page, setPage] = useState(0)
+  const PAGE_SIZE = 50
+
+  const query = useMemo(() => {
+    const params = new URLSearchParams()
+    if (providerFilter !== 'all') params.set('providerId', providerFilter)
+    if (modalityFilter !== 'all') params.set('modality', modalityFilter)
+    const q = params.toString()
+    return `/api/admin/models${q ? `?${q}` : ''}`
+  }, [providerFilter, modalityFilter])
+
+  const { data, loading, refetch } = useApi<{ models: any[] }>(query)
+  const { data: approvedData, refetch: refetchApproved } = useApi<{ models: any[] }>('/api/admin/approved-models')
+  const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+
+  // Build a set of approved model IDs for quick lookup
+  const approvedSet = useMemo(() => {
+    const s = new Set<string>()
+    for (const m of approvedData?.models || []) {
+      s.add(`${m.providerId}:${m.modelId}`)
+    }
+    return s
+  }, [approvedData])
+
+  // Filter by search
+  const filtered = useMemo(() => {
+    if (!data?.models) return []
+    if (!search) return data.models
+    const q = search.toLowerCase()
+    return data.models.filter((m) =>
+      m.name.toLowerCase().includes(q) ||
+      m.displayName.toLowerCase().includes(q) ||
+      (m.provider?.name || '').toLowerCase().includes(q)
+    )
+  }, [data, search])
+
+  // Pagination
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  const approveModel = async (m: any) => {
+    setApprovingId(m.id)
+    const ok = await mutate('/api/admin/approved-models', 'POST', { providerModelId: m.id }, `${m.displayName} approved for creators`)
+    setApprovingId(null)
+    if (ok.ok) {
+      refetchApproved()
+      refetch()
+    }
+  }
+
+  const bulkApprove = async (modelIds: string[]) => {
+    for (const id of modelIds) {
+      await mutate('/api/admin/approved-models', 'POST', { providerModelId: id }, undefined, true)
+    }
+    toast.success(`Approved ${modelIds.length} models`)
+    refetchApproved()
+    refetch()
+  }
+
+  if (loading || !data) return <LoadingBlock />
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { l: 'Catalog Models', v: data.models.length, i: Server },
+          { l: 'Approved', v: approvedSet.size, i: CheckCircle2 },
+          { l: 'Available', v: data.models.filter((m) => m.providerStatus === 'available').length, i: Check },
+          { l: 'Unavailable', v: data.models.filter((m) => m.providerStatus !== 'available').length, i: XCircle },
+        ].map((s) => { const Icon = s.i; return (
+          <Card key={s.l}><CardContent className="p-3 flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600"><Icon className="h-4 w-4" /></div>
+            <div><p className="text-lg font-bold tabular-nums leading-none">{s.v}</p><p className="text-[10px] text-muted-foreground mt-0.5">{s.l}</p></div>
+          </CardContent></Card>
+        )})}
+      </div>
+
+      {/* Filters */}
       <Card>
         <CardContent className="p-3 flex flex-wrap gap-2 items-center">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Select value={providerFilter} onValueChange={setProviderFilter}>
-            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="All Providers" /></SelectTrigger>
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search models..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(0) }}
+              className="pl-9 h-8 text-xs"
+            />
+          </div>
+          <Select value={providerFilter} onValueChange={(v) => { setProviderFilter(v); setPage(0) }}>
+            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="All Providers" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Providers</SelectItem>
               {provData?.providers.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={modalityFilter} onValueChange={setModalityFilter}>
-            <SelectTrigger className="h-8 w-40 text-xs"><SelectValue placeholder="All Modalities" /></SelectTrigger>
+          <Select value={modalityFilter} onValueChange={(v) => { setModalityFilter(v); setPage(0) }}>
+            <SelectTrigger className="h-8 w-32 text-xs"><SelectValue placeholder="All Types" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Modalities</SelectItem>
+              <SelectItem value="all">All Types</SelectItem>
               {MODALITIES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
             </SelectContent>
           </Select>
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">{data.models.length} models</span>
-            <Button size="sm" className="h-8" onClick={() => setAdding(true)}>
-              <Plus className="h-3.5 w-3.5 mr-1" />Add Model
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
-      {data.models.length === 0 ? (
-        <Card><CardContent className="p-0"><EmptyState icon={Cpu} message="No models found. Try adjusting filters." /></CardContent></Card>
+      {/* Bulk actions */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          onClick={() => bulkApprove(paged.filter((m) => m.providerStatus === 'available' && !approvedSet.has(`${m.providerId}:${m.name}`)).map((m) => m.id))}
+        >
+          <CheckCircle2 className="h-3 w-3 mr-1" /> Approve All Visible
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkApprove(paged.filter((m) => m.modality === 'TEXT' && m.providerStatus === 'available' && !approvedSet.has(`${m.providerId}:${m.name}`)).map((m) => m.id))}>
+          <MessageCircle className="h-3 w-3 mr-1" /> Approve Chat Models
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkApprove(paged.filter((m) => m.modality === 'IMAGE' && m.providerStatus === 'available' && !approvedSet.has(`${m.providerId}:${m.name}`)).map((m) => m.id))}>
+          <ImageIcon className="h-3 w-3 mr-1" /> Approve Image Models
+        </Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkApprove(paged.filter((m) => m.modality === 'VIDEO' && m.providerStatus === 'available' && !approvedSet.has(`${m.providerId}:${m.name}`)).map((m) => m.id))}>
+          <VideoIcon className="h-3 w-3 mr-1" /> Approve Video Models
+        </Button>
+      </div>
+
+      {/* Model list */}
+      {paged.length === 0 ? (
+        <Card><CardContent className="p-8 text-center">
+          <Server className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+          <p className="text-sm font-medium">No models in catalog</p>
+          <p className="text-xs text-muted-foreground mt-1">Sync a provider to populate the catalog.</p>
+        </CardContent></Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[640px] overflow-y-auto scroll-thin pr-1">
-          {data.models.map((m, i) => {
-            const modColor: Record<string, string> = {
-              TEXT: 'bg-amber-500/10 text-amber-600',
-              IMAGE: 'bg-violet-500/10 text-violet-600',
-              VIDEO: 'bg-violet-500/10 text-violet-600',
-              AUDIO: 'bg-sky-500/10 text-sky-600',
-              EMBEDDING: 'bg-emerald-500/10 text-emerald-600',
-              STT: 'bg-sky-500/10 text-sky-600',
-              TTS: 'bg-sky-500/10 text-sky-600',
-            }
-            return (
-              <motion.div key={m.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i * 0.02, 0.3) }}>
-                <Card>
-                  <CardContent className="p-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
+        <Card>
+          <CardContent className="p-0">
+            <div className="max-h-[600px] overflow-y-auto scroll-thin">
+              {paged.map((m, i) => {
+                const isApproved = approvedSet.has(`${m.providerId}:${m.name}`)
+                const isAvailable = m.providerStatus === 'available'
+                return (
+                  <div key={m.id} className="flex items-center gap-3 p-2.5 border-b last:border-0 hover:bg-muted/40">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{m.displayName}</p>
-                        <code className="text-[10px] text-muted-foreground">{m.name}</code>
+                        {isApproved && (
+                          <Badge variant="secondary" className="text-[8px] bg-emerald-500/10 text-emerald-600 shrink-0">
+                            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" /> Approved
+                          </Badge>
+                        )}
+                        <Badge variant="secondary" className={cn('text-[8px] shrink-0 capitalize',
+                          isAvailable ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-red-600'
+                        )}>
+                          {m.providerStatus || 'available'}
+                        </Badge>
                       </div>
-                      <Badge variant="secondary" className={cn('text-[9px] px-1.5 shrink-0', modColor[m.modality] || 'bg-muted')}>
-                        {m.modality}
-                      </Badge>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <code className="text-[10px] text-muted-foreground truncate">{m.name}</code>
+                        <Badge variant="secondary" className="text-[8px] bg-muted">{m.modality}</Badge>
+                        <span className="text-[10px] text-muted-foreground">{m.provider?.name}</span>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge variant="secondary" className="text-[9px] bg-amber-500/10 text-amber-600">
-                        {m.provider.name}
-                      </Badge>
-                      {m.isDefault && (
-                        <Badge variant="secondary" className="text-[9px] bg-emerald-500/10 text-emerald-600">Default</Badge>
+                    {/* Capabilities */}
+                    <div className="hidden md:flex items-center gap-1 shrink-0">
+                      {m.supportsVision && <Badge variant="secondary" className="text-[7px] px-1 py-0 bg-sky-500/10 text-sky-600">V</Badge>}
+                      {m.supportsReasoning && <Badge variant="secondary" className="text-[7px] px-1 py-0 bg-violet-500/10 text-violet-600">R</Badge>}
+                      {m.supportsToolCalling && <Badge variant="secondary" className="text-[7px] px-1 py-0 bg-emerald-500/10 text-emerald-600">T</Badge>}
+                      {m.supportsJson && <Badge variant="secondary" className="text-[7px] px-1 py-0 bg-amber-500/10 text-amber-600">J</Badge>}
+                    </div>
+                    {/* Cost */}
+                    <div className="text-right shrink-0 hidden sm:block">
+                      <p className="text-[10px] font-mono tabular-nums">${m.inputCostPer1k}/${m.outputCostPer1k}</p>
+                      <p className="text-[8px] text-muted-foreground">per 1k tok</p>
+                    </div>
+                    {/* Action */}
+                    <div className="shrink-0">
+                      {isApproved ? (
+                        <Badge variant="secondary" className="text-[9px] bg-emerald-500/10 text-emerald-600">
+                          <Check className="h-3 w-3 mr-0.5" /> In Catalog
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={approvingId === m.id || !isAvailable}
+                          onClick={() => approveModel(m)}
+                        >
+                          {approvingId === m.id ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Plus className="h-3 w-3 mr-1" />}
+                          Approve
+                        </Button>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
-                      <div>In: <span className="font-mono text-foreground">${m.inputCostPer1k}/1k</span></div>
-                      <div>Out: <span className="font-mono text-foreground">${m.outputCostPer1k}/1k</span></div>
-                      <div>Cost ×<span className="font-mono text-foreground">{m.costMultiplier}</span></div>
-                    </div>
-                    <div className="flex items-center justify-between pt-1 border-t">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={m.isActive}
-                          disabled={togglingId === m.id}
-                          onCheckedChange={(v) => toggleField(m, 'isActive', v)}
-                        />
-                        <span className="text-[10px] text-muted-foreground">Active</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">Default</span>
-                        <Switch
-                          checked={m.isDefault}
-                          disabled={togglingId === m.id}
-                          onCheckedChange={(v) => toggleField(m, 'isDefault', v)}
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            )
-          })}
-        </div>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {adding && (
-        <AddModelDialog
-          providers={provData?.providers || []}
-          onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); refetch() }}
-        />
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page === 0} onClick={() => setPage(page - 1)}>
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground py-1">Page {page + 1} of {totalPages}</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>
+              Next
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )
