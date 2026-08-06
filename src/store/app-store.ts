@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ModuleId } from '@/lib/nav'
+import type { ModuleId, UserRole } from '@/lib/nav'
 
 interface AppState {
   activeModule: ModuleId
@@ -29,6 +29,9 @@ interface AppState {
   previewCourseId: string | null
   openPreview: (courseId: string) => void
   closePreview: () => void
+  /** RBAC — current user's platform role. Defaults to SUPER_ADMIN in sandbox (demo mode). */
+  userRole: UserRole
+  setUserRole: (role: UserRole) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -55,10 +58,14 @@ export const useAppStore = create<AppState>()(
       previewCourseId: null,
       openPreview: (courseId) => set({ previewCourseId: courseId }),
       closePreview: () => set({ previewCourseId: null }),
+      // RBAC — sandbox defaults to SUPER_ADMIN so the admin pages are visible.
+      // In production this would be set from the authenticated session.
+      userRole: 'SUPER_ADMIN',
+      setUserRole: (role) => set({ userRole: role }),
     }),
     {
       name: 'creatoros-app',
-      partialize: (s) => ({ activeModule: s.activeModule, sidebarCollapsed: s.sidebarCollapsed, theme: s.theme }),
+      partialize: (s) => ({ activeModule: s.activeModule, sidebarCollapsed: s.sidebarCollapsed, theme: s.theme, userRole: s.userRole }),
     }
   )
 )

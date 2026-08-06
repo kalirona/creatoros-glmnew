@@ -19,13 +19,13 @@ import {
 import { BuyCreditsDialog } from '@/components/app/buy-credits-dialog'
 
 export function Sidebar() {
-  const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar } = useAppStore()
+  const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar, userRole } = useAppStore()
   const [credits, setCredits] = useState(4280)
   const [buyOpen, setBuyOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
-  // Check if user is platform owner
-  const isPlatformOwner = true
+  // RBAC — only SUPER_ADMIN sees platform modules (AI Settings, System Settings)
+  const isPlatformOwner = userRole === 'SUPER_ADMIN'
 
   const toggleGroup = (id: string) => {
     setExpandedGroups(prev => {

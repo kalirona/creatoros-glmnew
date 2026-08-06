@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/app/sidebar'
 import { Topbar } from '@/components/app/topbar'
 import { CommandPalette } from '@/components/app/command-palette'
+import { RbacGuard } from '@/components/app/rbac-guard'
 import { useAppStore } from '@/store/app-store'
 import { DashboardModule } from '@/components/modules/dashboard'
 import { AiStudioModule } from '@/components/modules/ai-studio'
@@ -18,7 +19,8 @@ import { AnalyticsModule } from '@/components/modules/analytics'
 import { PagesFunnelsModule } from '@/components/modules/pages-funnels'
 import { SupportModule } from '@/components/modules/support'
 import { SettingsModule } from '@/components/modules/settings'
-import { AdminModule } from '@/components/modules/admin'
+import { AiSettingsModule } from '@/components/modules/ai-settings'
+import { SystemSettingsModule } from '@/components/modules/system-settings'
 import { CertificatesModule } from '@/components/modules/certificates'
 import { MediaLibraryModule } from '@/components/modules/media-library'
 import { AutomationModule } from '@/components/modules/automation'
@@ -40,16 +42,22 @@ const MODULES: Record<ModuleId, React.ComponentType> = {
   'pages-funnels': PagesFunnelsModule,
   'support': SupportModule,
   'settings': SettingsModule,
-  'admin': AdminModule,
+  'admin': AiSettingsModule, // backward compat: old 'admin' route → AI Settings
+  'ai-settings': AiSettingsModule,
+  'system-settings': SystemSettingsModule,
   'certificates': CertificatesModule,
   'media-library': MediaLibraryModule,
   'automation': AutomationModule,
 }
 
+// Platform modules that require RBAC guard
+const PLATFORM_MODULES: ModuleId[] = ['admin', 'ai-settings', 'system-settings']
+
 export default function Home() {
   const activeModule = useAppStore((s) => s.activeModule)
   const builderCourseId = useAppStore((s) => s.builderCourseId)
   const Active = MODULES[activeModule] ?? DashboardModule
+  const isPlatformModule = PLATFORM_MODULES.includes(activeModule)
 
   // ── Full-screen Course Builder (overrides entire dashboard layout) ──
   if (builderCourseId) {
@@ -71,7 +79,13 @@ export default function Home() {
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="mx-auto w-full max-w-[1400px] px-4 py-6 md:px-6 md:py-8"
             >
-              <Active />
+              {isPlatformModule ? (
+                <RbacGuard moduleId={activeModule}>
+                  <Active />
+                </RbacGuard>
+              ) : (
+                <Active />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>

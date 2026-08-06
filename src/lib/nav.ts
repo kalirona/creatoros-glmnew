@@ -2,15 +2,15 @@ import {
   LayoutDashboard, GraduationCap, Users, ShoppingBag, Package,
   Mail, UserCircle, Link2, BarChart3, Sparkles, LifeBuoy, Settings,
   CreditCard, Globe, ShieldCheck, Award, FolderOpen, type LucideIcon,
-  Zap, ChevronDown,
+  Zap, ChevronDown, Cpu, ServerCog,
 } from 'lucide-react'
 
 // ============================================================================
 // CreatorOS Navigation — Creator-first workflow structure
 // ----------------------------------------------------------------------------
-// 10 primary modules organized by how creators actually work:
-// Dashboard → AI Studio → Courses → Sell → Website → Community → Marketing → Analytics → Settings
-// Super Admin is platform-owner-only (hidden for creators)
+// Creator modules: Dashboard → AI Studio → Courses → Sell → Website → Community → Marketing → Analytics → Settings
+// Platform modules (SUPER_ADMIN only): AI Settings + System Settings
+// Business owners, admins, instructors, members, customers NEVER see platform modules.
 // ============================================================================
 
 export type ModuleId =
@@ -18,6 +18,7 @@ export type ModuleId =
   | 'membership' | 'email' | 'crm' | 'affiliates' | 'analytics'
   | 'ai-studio' | 'pages-funnels' | 'support' | 'settings' | 'admin'
   | 'certificates' | 'media-library' | 'automation'
+  | 'ai-settings' | 'system-settings'
 
 export interface NavSubItem {
   label: string
@@ -145,21 +146,44 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ]
 
-// ─── Super Admin Navigation (platform owner only) ────────────────────────────
+// ─── Platform Navigation (SUPER_ADMIN only — RBAC enforced) ────────────────
+// Only SUPER_ADMIN role can access these. Everyone else gets 403 + hidden sidebar.
 
 export const ADMIN_NAV_GROUP: NavGroup = {
   title: 'Platform',
   items: [
     {
-      id: 'admin', label: 'Super Admin', icon: ShieldCheck, description: 'Platform control center', badge: 'Admin', accent: 'text-amber-500',
+      id: 'ai-settings', label: 'AI Settings', icon: Cpu, description: 'AI providers, models, routing, credits, logs', badge: 'Admin', accent: 'text-amber-500',
       subItems: [
-        { label: 'Dashboard', moduleId: 'admin' },
-        { label: 'Workspaces', moduleId: 'admin' },
-        { label: 'Users', moduleId: 'admin' },
-        { label: 'Plans', moduleId: 'admin' },
-        { label: 'AI Providers', moduleId: 'admin' },
-        { label: 'Feature Flags', moduleId: 'admin' },
-        { label: 'Audit Logs', moduleId: 'admin' },
+        { label: 'Dashboard', moduleId: 'ai-settings' },
+        { label: 'Providers', moduleId: 'ai-settings', subTab: 'providers' },
+        { label: 'Models', moduleId: 'ai-settings', subTab: 'models' },
+        { label: 'Routing', moduleId: 'ai-settings', subTab: 'routing' },
+        { label: 'Credits', moduleId: 'ai-settings', subTab: 'credits' },
+        { label: 'Prompt Library', moduleId: 'ai-settings', subTab: 'prompts' },
+        { label: 'AI Features', moduleId: 'ai-settings', subTab: 'features' },
+        { label: 'Logs', moduleId: 'ai-settings', subTab: 'logs' },
+        { label: 'Usage', moduleId: 'ai-settings', subTab: 'usage' },
+        { label: 'Security', moduleId: 'ai-settings', subTab: 'security' },
+      ],
+    },
+    {
+      id: 'system-settings', label: 'System Settings', icon: ServerCog, description: 'Platform, auth, billing, email, storage, security', badge: 'Admin', accent: 'text-amber-500',
+      subItems: [
+        { label: 'General', moduleId: 'system-settings' },
+        { label: 'Authentication', moduleId: 'system-settings', subTab: 'auth' },
+        { label: 'Workspaces', moduleId: 'system-settings', subTab: 'workspaces' },
+        { label: 'Billing', moduleId: 'system-settings', subTab: 'billing' },
+        { label: 'Email', moduleId: 'system-settings', subTab: 'email' },
+        { label: 'Storage', moduleId: 'system-settings', subTab: 'storage' },
+        { label: 'Domains', moduleId: 'system-settings', subTab: 'domains' },
+        { label: 'Security', moduleId: 'system-settings', subTab: 'security' },
+        { label: 'Integrations', moduleId: 'system-settings', subTab: 'integrations' },
+        { label: 'Jobs', moduleId: 'system-settings', subTab: 'jobs' },
+        { label: 'Database', moduleId: 'system-settings', subTab: 'database' },
+        { label: 'Monitoring', moduleId: 'system-settings', subTab: 'monitoring' },
+        { label: 'Feature Flags', moduleId: 'system-settings', subTab: 'flags' },
+        { label: 'Backups', moduleId: 'system-settings', subTab: 'backups' },
       ],
     },
   ],
@@ -169,6 +193,22 @@ export const ADMIN_NAV_GROUP: NavGroup = {
 export const ALL_NAV_GROUPS: NavGroup[] = [...NAV_GROUPS, ADMIN_NAV_GROUP]
 
 export const ALL_NAV_ITEMS: NavItem[] = ALL_NAV_GROUPS.flatMap(g => g.items)
+
+// ─── RBAC ───────────────────────────────────────────────────────────────────
+// Only SUPER_ADMIN can access platform modules. Everyone else gets 403.
+
+export type UserRole = 'SUPER_ADMIN' | 'OWNER' | 'ADMIN' | 'INSTRUCTOR' | 'MEMBER' | 'CUSTOMER'
+
+export const PLATFORM_MODULES: ModuleId[] = ['ai-settings', 'system-settings', 'admin']
+
+export function isPlatformModule(moduleId: ModuleId): boolean {
+  return PLATFORM_MODULES.includes(moduleId)
+}
+
+export function canAccessModule(moduleId: ModuleId, role: UserRole): boolean {
+  if (!isPlatformModule(moduleId)) return true
+  return role === 'SUPER_ADMIN'
+}
 
 // ─── Keyboard Shortcuts ─────────────────────────────────────────────────────
 

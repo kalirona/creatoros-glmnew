@@ -368,7 +368,7 @@ const REQUEST_TYPES = ['CHAT', 'GENERATE', 'IMAGE', 'VIDEO', 'EMBEDDING', 'STT',
  * Shared UI helpers
  * ========================================================================== */
 
-function StatCard({
+export function StatCard({
   icon: Icon, label, value, hint, accent = 'amber',
 }: {
   icon: React.ComponentType<{ className?: string }>
@@ -400,7 +400,7 @@ function StatCard({
   )
 }
 
-function HealthDot({ healthy, label }: { healthy: boolean; label?: string }) {
+export function HealthDot({ healthy, label }: { healthy: boolean; label?: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={cn('h-2 w-2 rounded-full', healthy ? 'bg-emerald-500' : 'bg-red-500')}>
@@ -413,7 +413,7 @@ function HealthDot({ healthy, label }: { healthy: boolean; label?: string }) {
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     OK: 'bg-emerald-500/10 text-emerald-600',
     COMPLETED: 'bg-emerald-500/10 text-emerald-600',
@@ -434,7 +434,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function CapBadges({ capabilities }: { capabilities: string }) {
+export function CapBadges({ capabilities }: { capabilities: string }) {
   if (!capabilities) return null
   const caps = capabilities.split(',').map((s) => s.trim()).filter(Boolean)
   const capColor: Record<string, string> = {
@@ -456,7 +456,7 @@ function CapBadges({ capabilities }: { capabilities: string }) {
   )
 }
 
-function ProgressBar({ value, accent = 'amber' }: { value: number; accent?: 'amber' | 'emerald' | 'red' | 'sky' }) {
+export function ProgressBar({ value, accent = 'amber' }: { value: number; accent?: 'amber' | 'emerald' | 'red' | 'sky' }) {
   const v = Math.min(100, Math.max(0, value))
   const colorMap = {
     amber: 'bg-amber-500',
@@ -471,7 +471,7 @@ function ProgressBar({ value, accent = 'amber' }: { value: number; accent?: 'amb
   )
 }
 
-function EmptyState({ icon: Icon, message }: { icon: React.ComponentType<{ className?: string }>; message: string }) {
+export function EmptyState({ icon: Icon, message }: { icon: React.ComponentType<{ className?: string }>; message: string }) {
   return (
     <div className="p-8 text-center">
       <Icon className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
@@ -480,7 +480,7 @@ function EmptyState({ icon: Icon, message }: { icon: React.ComponentType<{ class
   )
 }
 
-function LoadingBlock() {
+export function LoadingBlock() {
   return <Skeleton className="h-96 rounded-xl" />
 }
 
@@ -504,7 +504,7 @@ async function mutate(
   }
 }
 
-function fmtBytes(n: number): string {
+export function fmtBytes(n: number): string {
   if (!n || n <= 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let v = n, i = 0
@@ -512,7 +512,7 @@ function fmtBytes(n: number): string {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`
 }
 
-function fmtMoney(n: number): string {
+export function fmtMoney(n: number): string {
   return '$' + (Math.round(n * 100) / 100).toFixed(n < 1 ? 4 : 2)
 }
 
@@ -591,7 +591,7 @@ export function AdminModule() {
  * 1. Dashboard — platform overview & system health
  * ========================================================================== */
 
-function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
+export function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
   const { data: mon, loading: l1 } = useApi<MonitoringData>('/api/admin/monitoring')
   const { data: logs, loading: l2 } = useApi<{ logs: LogRow[] }>('/api/admin/logs?page=1&pageSize=5')
 
@@ -824,7 +824,7 @@ function CapIconBadges({ model }: { model: ProviderModel }) {
   )
 }
 
-function ProvidersPanel() {
+export function ProvidersPanel() {
   const { data, loading, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [showKey, setShowKey] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -2421,7 +2421,7 @@ function PricingEditDialog({
  * 3. API Keys — all keys across providers with rotate dialog
  * ========================================================================== */
 
-function ApiKeysPanel() {
+export function ApiKeysPanel() {
   const { data: provData, loading: l1, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [keys, setKeys] = useState<Array<ProviderKey & { providerName: string; providerSlug: string }>>([])
   const [loadingKeys, setLoadingKeys] = useState(true)
@@ -2614,7 +2614,7 @@ function ApiKeysPanel() {
  * 4. Models — filter by provider/modality, default + active toggles, add dialog
  * ========================================================================== */
 
-function ModelsPanel() {
+export function ModelsPanel() {
   const [providerFilter, setProviderFilter] = useState('all')
   const [modalityFilter, setModalityFilter] = useState('all')
   const query = useMemo(
@@ -2852,7 +2852,7 @@ function AddModelDialog({
  * 5. Routing — 14 categories with provider + fallback + strategy
  * ========================================================================== */
 
-function RoutingPanel() {
+export function RoutingPanel() {
   const { data: routeData, loading: l1, refetch } = useApi<{ routes: RouteRow[] }>('/api/admin/routing')
   const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [drafts, setDrafts] = useState<Record<string, { providerId: string; fallbackProviderId: string; strategy: string; isActive: boolean }>>({})
@@ -2984,7 +2984,7 @@ function RoutingPanel() {
  * 6. Credits — totals + recent transactions
  * ========================================================================== */
 
-function CreditsPanel() {
+export function CreditsPanel() {
   const { data, loading } = useApi<CreditsData>('/api/admin/credits')
   if (loading || !data) return <LoadingBlock />
 
@@ -3049,7 +3049,7 @@ function Wallet({ className }: { className?: string }) {
  * 7. Storage — per-workspace usage with quota update
  * ========================================================================== */
 
-function StoragePanel() {
+export function StoragePanel() {
   const { data, loading, refetch } = useApi<StorageData>('/api/admin/storage')
   const [editing, setEditing] = useState<StorageWorkspace | null>(null)
   const [newQuota, setNewQuota] = useState('10')
@@ -3201,7 +3201,7 @@ function StoragePanel() {
  * 8. Jobs — async AI job queue with status filter + view dialog
  * ========================================================================== */
 
-function JobsPanel() {
+export function JobsPanel() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [viewing, setViewing] = useState<JobRow | null>(null)
@@ -3397,7 +3397,7 @@ function JobsPanel() {
  * 9. Monitoring — real-time metrics
  * ========================================================================== */
 
-function MonitoringPanel() {
+export function MonitoringPanel() {
   const { data, loading, refetch } = useApi<MonitoringData>('/api/admin/monitoring')
   const [autoRefresh, setAutoRefresh] = useState(false)
 
@@ -3537,7 +3537,7 @@ function MonitoringPanel() {
  * 10. Logs — paginated audit trail with filters
  * ========================================================================== */
 
-function LogsPanel() {
+export function LogsPanel() {
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({
     providerId: 'all',
@@ -3690,7 +3690,7 @@ function LogsPanel() {
  * 11. Costs — today/month, 30-day chart, per-provider breakdown, alerts
  * ========================================================================== */
 
-function CostsPanel() {
+export function CostsPanel() {
   const { data, loading, refetch } = useApi<CostData>('/api/admin/costs')
   if (loading || !data) return <LoadingBlock />
 
@@ -3860,7 +3860,7 @@ function CostsPanel() {
  * 12. Security — keys, rate limits, empty-key providers, isolation
  * ========================================================================== */
 
-function SecurityPanel() {
+export function SecurityPanel() {
   const { data, loading, refetch } = useApi<SecurityData>('/api/admin/security')
   const [rateForm, setRateForm] = useState({ minute: 60, hour: 600 })
   const [saving, setSaving] = useState(false)
@@ -4010,7 +4010,7 @@ function SecurityPanel() {
  * 13. Feature Flags — toggle list
  * ========================================================================== */
 
-function FlagsPanel() {
+export function FlagsPanel() {
   const { data, loading, refetch } = useApi<{ flags: Flag[] }>('/api/admin/flags')
 
   if (loading || !data) return <LoadingBlock />
