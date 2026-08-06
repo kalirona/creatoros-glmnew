@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import {
   generateVideo,
-  VIDEO_PRESETS,
 } from '@/lib/ai-engine'
 import {
   getDemoUser,
@@ -13,7 +12,11 @@ import {
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const VALID_RESOLUTIONS = new Set(['720p', '1080p', '4K'])
+const VALID_RESOLUTIONS = new Set(['720p', '1080p'])
+const VALID_DURATIONS = new Set([5, 10])
+const VALID_PRESETS = new Set([
+  'Product Demo', 'Social Reel', 'YouTube Short', 'Explainer', 'Promo', 'Animation',
+])
 
 // POST /api/ai/videos — kick off an AI video generation job.
 export async function POST(req: NextRequest) {
@@ -43,29 +46,30 @@ export async function POST(req: NextRequest) {
     const cleanPrompt = prompt.trim()
 
     // ── Validate preset ──────────────────────────────────────────────────
-    const validPresets = VIDEO_PRESETS as readonly string[]
     const cleanPreset =
-      preset && validPresets.includes(preset) ? preset : undefined
+      preset && VALID_PRESETS.has(preset) ? preset : 'Social Reel'
 
     // ── Validate duration ─────────────────────────────────────────────────
-    let cleanDuration: number | undefined
+    // Real video models support: 5s, 10s (Kling, CogVideoX)
+    let cleanDuration = 5
     if (duration !== undefined) {
       const d = Number(duration)
-      if (!Number.isFinite(d) || d < 1 || d > 60) {
+      if (!VALID_DURATIONS.has(d)) {
         return NextResponse.json(
-          { error: 'Duration must be between 1 and 60 seconds.' },
+          { error: `Duration must be 5 or 10 seconds. Received: ${duration}` },
           { status: 400 },
         )
       }
-      cleanDuration = Math.floor(d)
+      cleanDuration = d
     }
 
     // ── Validate resolution ───────────────────────────────────────────────
-    let cleanResolution: string | undefined
+    // Real video models support: 720p, 1080p (4K is NOT supported)
+    let cleanResolution = '1080p'
     if (resolution !== undefined) {
       if (!VALID_RESOLUTIONS.has(resolution)) {
         return NextResponse.json(
-          { error: 'Resolution must be one of: 720p, 1080p, 4K.' },
+          { error: 'Resolution must be 720p or 1080p. 4K is not supported by current video models.' },
           { status: 400 },
         )
       }

@@ -145,7 +145,7 @@ export const IMAGE_STYLES = [
 
 export const VIDEO_PRESETS = [
   'Product Demo', 'Social Reel', 'YouTube Short', 'Explainer',
-  'Promo', 'AI Avatar', 'Presentation', 'Animation',
+  'Promo', 'Animation',
 ] as const
 
 // Tool slug → route category mapping (for default routing)

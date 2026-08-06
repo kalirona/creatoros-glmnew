@@ -38,12 +38,11 @@ export async function POST(
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
 
-    // ── Resolve route + credit cost ───────────────────────────────────────
-    let route = await resolveRoute('VIDEO')
-    if (!route) route = await resolveRoute('IMAGE')
+    // ── Resolve route — VIDEO only (no fallback to IMAGE) ────────────────
+    const route = await resolveRoute('VIDEO')
     if (!route) {
       return NextResponse.json(
-        { error: 'AI service is temporarily unavailable. Please try again later.' },
+        { error: 'No enabled video model available. Please ask your administrator to approve a video model.' },
         { status: 503 },
       )
     }

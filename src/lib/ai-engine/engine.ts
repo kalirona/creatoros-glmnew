@@ -518,6 +518,14 @@ export async function generateVideo(params: GenerateVideoParams): Promise<Genera
 
 async function simulateJobProgress(jobId: string): Promise<void> {
   try {
+    // Get the job to read actual params
+    const job = await db.aiJob.findUnique({ where: { id: jobId } })
+    if (!job) return
+    const jobParams = JSON.parse(job.params || '{}')
+    const videoDuration = jobParams.duration || 5
+    const videoResolution = jobParams.resolution || '1080p'
+    const [w, h] = videoResolution === '720p' ? [1280, 720] : [1920, 1080]
+
     await sleep(2000)
     await db.aiJob.update({
       where: { id: jobId },
@@ -535,32 +543,32 @@ async function simulateJobProgress(jobId: string): Promise<void> {
     await sleep(1500)
     const completedAt = new Date()
     const resultUrl = `https://cdn.creatoros.ai/video/${jobId}.mp4`
-    const job = await db.aiJob.update({
+    const updatedJob = await db.aiJob.update({
       where: { id: jobId },
       data: {
         status: 'COMPLETED',
         progress: 100,
         resultUrl,
-        resultMeta: JSON.stringify({ width: 1280, height: 720, duration: 8 }),
+        resultMeta: JSON.stringify({ width: w, height: h, duration: videoDuration }),
         completedAt,
       },
     })
 
     await db.aiAsset.create({
       data: {
-        workspaceId: job.workspaceId,
-        userId: job.userId,
+        workspaceId: updatedJob.workspaceId,
+        userId: updatedJob.userId,
         generationId: null,
         type: 'VIDEO',
         folder: 'AI Videos',
-        name: job.prompt.slice(0, 80) || 'AI Video',
-        description: job.prompt.slice(0, 500),
+        name: updatedJob.prompt.slice(0, 80) || 'AI Video',
+        description: updatedJob.prompt.slice(0, 500),
         url: resultUrl,
         thumbnailUrl: '',
         mimeType: 'video/mp4',
-        width: 1280,
-        height: 720,
-        duration: 8,
+        width: w,
+        height: h,
+        duration: videoDuration,
         prompt: job.prompt,
         tags: JSON.stringify(['ai-generated', 'video']),
       },

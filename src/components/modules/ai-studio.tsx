@@ -148,16 +148,22 @@ const VIDEO_PRESETS_UI: { value: string; icon: LucideIcon; desc: string }[] = [
   { value: 'YouTube Short', icon: Youtube, desc: 'Under 60s, engaging hook' },
   { value: 'Explainer',    icon: BookOpen, desc: 'Walk through a concept' },
   { value: 'Promo',        icon: Megaphone, desc: 'Announce a launch or deal' },
-  { value: 'AI Avatar',    icon: MessageSquare, desc: 'Talking-head presenter' },
-  { value: 'Presentation', icon: Monitor, desc: 'Slide-style with voiceover' },
   { value: 'Animation',    icon: Clapperboard, desc: 'Animated motion graphic' },
 ]
 
-const VIDEO_DURATIONS = [4, 8, 15, 30]
+// Real durations supported by video models:
+// Kling Video: 5s, 10s
+// CogVideoX: 6s, 10s
+// Common safe options: 5s, 10s
+const VIDEO_DURATIONS = [5, 10]
+
+// Real resolutions supported by video models:
+// Kling Video: 720p, 1080p
+// CogVideoX: 720p, 1080p
+// 4K is NOT supported by any affordable model — removed
 const VIDEO_RESOLUTIONS: { value: string; icon: LucideIcon }[] = [
   { value: '720p', icon: Tv },
   { value: '1080p', icon: Monitor },
-  { value: '4K', icon: Tv },
 ]
 
 const FOLDERS = [
@@ -1187,7 +1193,7 @@ interface VideoJob {
 function VideosTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => void }) {
   const [prompt, setPrompt] = useState('')
   const [preset, setPreset] = useState('Social Reel')
-  const [duration, setDuration] = useState(8)
+  const [duration, setDuration] = useState(5)
   const [resolution, setResolution] = useState('1080p')
   const [loading, setLoading] = useState(false)
   const [activeJobs, setActiveJobs] = useState<VideoJob[]>([])

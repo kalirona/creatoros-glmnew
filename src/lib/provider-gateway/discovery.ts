@@ -530,6 +530,7 @@ const FAL_AI_MODELS: DiscoveredModel[] = [
   { id: 'fal-ai/flux-dev', name: 'Flux Dev', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.03, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image'] },
   { id: 'fal-ai/flux/schnell', name: 'Flux Schnell', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.02, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'fast'] },
   { id: 'fal-ai/kling-video', name: 'Kling Video', contextWindow: 0, modality: 'VIDEO', inputCostPer1k: 0.5, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: true, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['video'] },
+  { id: 'fal-ai/cogvideox', name: 'CogVideoX', contextWindow: 0, modality: 'VIDEO', inputCostPer1k: 0.08, outputCostPer1k: 0, supportsVision: false, supportsImage: false, supportsAudio: false, supportsVideo: true, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['video', 'cheap'] },
   { id: 'fal-ai/sdxl', name: 'SDXL', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.02, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image'] },
   { id: 'fal-ai/fast-sdxl', name: 'Fast SDXL', contextWindow: 0, modality: 'IMAGE', inputCostPer1k: 0.015, outputCostPer1k: 0, supportsVision: false, supportsImage: true, supportsAudio: false, supportsVideo: false, supportsEmbeddings: false, supportsStreaming: false, supportsJson: false, supportsToolCalling: false, supportsReasoning: false, tags: ['image', 'fast'] },
 ]
@@ -736,9 +737,18 @@ export async function syncProviderModels(providerId: string): Promise<SyncResult
   }
 
   // For GLM/Z.ai — use the SDK (no HTTP endpoint)
+  // For Fal AI — use the hardcoded real model IDs (no /models endpoint)
+  // For Deepgram — use the hardcoded real model IDs (no /models endpoint)
   let discovered: DiscoveredModel[]
   if (slug === 'glm' || slug === 'zai') {
     discovered = GLM_MODELS
+  } else if (slug === 'fal-ai') {
+    // Fal AI doesn't have a /models endpoint — use the real model IDs
+    // These are the actual Fal AI model IDs used in production
+    discovered = FAL_AI_MODELS
+  } else if (slug === 'deepgram') {
+    // Deepgram doesn't have a /models endpoint — use the real model IDs
+    discovered = DEEPGRAM_MODELS
   } else {
     if (!provider.apiKey || provider.apiKey.trim().length < 10) {
       return { ...empty, error: 'No API key configured. Validate a key first.' }
