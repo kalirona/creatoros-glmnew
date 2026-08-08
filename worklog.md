@@ -1969,3 +1969,73 @@ Verified:
 - ✅ 2 VIDEO models approved: CogVideoX + Kling Video
 - ✅ Lint: 0 errors
 - ✅ TypeScript: 0 errors
+
+---
+Task ID: N8N-PHASE-1
+Agent: Main (Z.ai Code)
+Task: Phase 1 — n8n integration foundation (no changes to existing AI)
+
+Work Log:
+- Audited existing AI architecture (docs/N8N_INTEGRATION_AUDIT.md):
+  * Documented AI request flow, provider flow, credit flow, job flow, asset flow
+  * Identified 13 DB tables involved in AI
+  * Identified security controls (auth, workspace, rate limiting, credentials)
+  * Mapped 12 functions that could eventually call n8n
+  * Identified 10 functions that must stay in CreatorOS
+  * Listed files to change in Phase 2+ vs files that must remain untouched
+- Created n8n core library (src/lib/n8n/):
+  * types.ts — N8nContext, N8nRequest, N8nResponse, N8nError class, N8nHealthStatus
+  * schemas.ts — Zod validation (N8nResponseSchema, N8nHealthTestDataSchema)
+  * workflows.ts — registry with HEALTH_TEST enabled + 5 future workflows disabled
+  * config.ts — env var access helpers (getBaseUrl, getApiKey, getWebhookSecret, getTimeoutMs)
+  * client.ts — N8nClient class with HMAC-SHA256 signing, timeout, Zod validation, audit logging
+  * health.ts — checkN8nHealth() pings /healthz, isN8nHealthy()
+  * logging.ts — logN8nOperation() to AuditLog table, getRecentN8nOperations()
+  * feature-flag.ts — isN8nEnabled (env), isN8nEnabledAsync (env+DB), ensureN8nFeatureFlag()
+  * index.ts — barrel exports
+- Created API endpoints:
+  * POST /api/n8n/test — authenticates, checks config+flag, calls HEALTH_TEST workflow, returns result
+  * GET /api/n8n/health — Super Admin only, returns health + workflow registry + recent operations
+- Environment configuration:
+  * .env — added N8N_BASE_URL, N8N_API_KEY, N8N_WEBHOOK_SECRET, N8N_TIMEOUT_MS, N8N_AI_ENABLED (all empty/false)
+  * .env.example — documented all vars with descriptions
+- Security implementation:
+  * HMAC-SHA256 signature: X-CreatorOS-Signature over `${requestId}:${timestamp}:${body}`
+  * Headers: X-N8N-API-Key, X-CreatorOS-Signature, X-CreatorOS-Request-ID, X-CreatorOS-Timestamp
+  * Request ID: crypto.randomUUID() per request
+  * Timeout: AbortController with workflow-specific timeout
+  * Response validation: Zod discriminated union (success/failure)
+  * No NEXT_PUBLIC_ vars — all server-only
+  * AuditLog: every n8n operation logged with requestId, workflow, duration, success/error
+  * User/workspace resolved from authenticated session, never from request body
+- Feature flag (safe rollout):
+  * N8N_AI_ENABLED env var (master switch, needs restart)
+  * n8n_ai_enabled FeatureFlag DB row (admin toggle, 60s cache)
+  * Both must be true for n8n to be enabled
+  * Seeded FeatureFlag row (enabled=false)
+- Created n8n workflow import file:
+  * docs/n8n-workflow-creatoros-health-test.json — importable into n8n
+  * Receives authenticated request, returns { success, requestId, data: { service, status } }
+- Created documentation:
+  * docs/N8N_INTEGRATION_AUDIT.md — full architecture audit
+  * docs/N8N_INTEGRATION.md — architecture, env vars, security, contracts, setup guide, troubleshooting
+- Verification:
+  * ESLint: 0 errors ✓
+  * TypeScript: 0 errors in n8n files (5 pre-existing errors in unrelated files) ✓
+  * Browser: page loads, no console errors, no secrets leaked, no n8n JS on client ✓
+  * n8n/test: returns proper JSON (503 not configured / 502 network error) ✓
+  * n8n/health: returns 403 for non-Super-Admin ✓
+  * Existing AI features: all working (chat, images, video, features endpoint) ✓
+  * AuditLog: n8n operations logged to DB ✓
+
+Stage Summary:
+- Phase 1 COMPLETE. n8n integration foundation built without touching any existing AI code.
+- Zero n8n imports in existing AI routes/engine (verified via grep).
+- Zero NEXT_PUBLIC vars in n8n code (no secrets to browser).
+- Feature flag defaults to OFF — existing AI engine completely unaffected.
+- When enabled + configured, n8nClient.execute() can call the health-test workflow.
+- Future Phase 2 will add N8nAdapter to providers.ts and route through n8n when flag is on.
+- Files created: 14 new files (8 in src/lib/n8n/, 2 API routes, 3 docs, 1 .env.example)
+- Files modified: 1 (.env — added commented n8n vars)
+- DB changes: 1 FeatureFlag row added (n8n_ai_enabled, enabled=false)
+- No Prisma schema changes. No existing code modified.
