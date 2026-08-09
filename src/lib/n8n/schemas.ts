@@ -36,6 +36,27 @@ export const N8nHealthTestDataSchema = z.object({
   status: z.string().optional(),
 })
 
+/**
+ * Schema for the TEXT_GENERATION workflow's data payload.
+ *
+ * Validates that n8n returned:
+ *   - text: non-empty string (the generated content)
+ *   - provider: non-empty string (the provider that served the request)
+ *   - model: non-empty string (the model that served the request)
+ *   - inputTokens: optional number
+ *   - outputTokens: optional number
+ *
+ * If any field is missing or the wrong type, safeParse() returns failure
+ * and the caller throws INVALID_RESPONSE.
+ */
+export const N8nTextGenerationDataSchema = z.object({
+  text: z.string().min(1),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  inputTokens: z.number().int().nonnegative().optional(),
+  outputTokens: z.number().int().nonnegative().optional(),
+})
+
 /** Type guard: is this a successful response? */
 export function isN8nSuccess<T>(r: { success: boolean }): r is { success: true; requestId: string; data: T } {
   return r.success === true

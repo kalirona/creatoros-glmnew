@@ -62,6 +62,7 @@ export type N8nErrorCode =
   | 'HTTP_ERROR'          // n8n returned non-2xx
   | 'INVALID_RESPONSE'    // response failed Zod validation
   | 'NETWORK_ERROR'       // fetch threw (DNS, connection refused, etc.)
+  | 'MODEL_MISMATCH'      // n8n returned a different model than the one requested
   | 'UNKNOWN'
 
 /** Structured error thrown by the n8n client. */
@@ -124,4 +125,73 @@ export interface N8nLogEntry {
   success: boolean
   errorCode?: string
   errorMessage?: string
+}
+
+// ─── TEXT_GENERATION workflow contracts ─────────────────────────────────────
+// Phase 2.2 — Chat → n8n → OpenRouter with explicit-model verification.
+// These types define the payload CreatorOS sends to the n8n TEXT_GENERATION
+// workflow and the data the workflow must return.
+
+/**
+ * A single chat message in the text-generation payload.
+ * Matches the existing ChatMessage shape from ai-engine/providers.ts.
+ */
+export interface N8nChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+/**
+ * The payload sent to the n8n TEXT_GENERATION workflow.
+ *
+ * The `provider` and `model` fields are EXPLICIT — n8n must call exactly
+ * this provider with exactly this model. The workflow must NOT substitute
+ * a different model. If it does, CreatorOS will detect the mismatch via
+ * the response verification and throw MODEL_MISMATCH.
+ *
+ * Example:
+ *   {
+ *     provider: 'openrouter',
+ *     model: 'google/gemini-2.5-pro-preview',
+ *     temperature: 0.7,
+ *     maxTokens: 2000,
+ *     messages: [
+ *       { role: 'system', content: 'You are a helpful assistant.' },
+ *       { role: 'user', content: 'Hello!' }
+ *     ]
+ *   }
+ */
+export interface N8nTextGenerationPayload {
+  /** The provider n8n should call (e.g. 'openrouter'). */
+  provider: string
+  /** The EXACT model ID n8n must use (e.g. 'google/gemini-2.5-pro-preview'). */
+  model: string
+  /** Sampling temperature (0-2). Optional — n8n workflow can use its default. */
+  temperature?: number
+  /** Max output tokens. Optional. */
+  maxTokens?: number
+  /** Full conversation including the system message. */
+  messages: N8nChatMessage[]
+}
+
+/**
+ * The data the n8n TEXT_GENERATION workflow must return on success.
+ *
+ * The `provider` and `model` fields let CreatorOS verify that n8n actually
+ * used the requested provider+model — not a silently substituted one.
+ *
+ * `inputTokens` and `outputTokens` are optional because not all providers
+ * return token counts. If absent, CreatorOS estimates (4 chars ≈ 1 token).
+ */
+export interface N8nTextGenerationData {
+  /** The generated text. */
+  text: string
+  /** The provider that actually served the request (must match requested). */
+  provider: string
+  /** The model that actually served the request (must match requested). */
+  model: string
+  /** Actual input token count from the provider, if available. */
+  inputTokens?: number
+  /** Actual output token count from the provider, if available. */
+  outputTokens?: number
 }

@@ -12,6 +12,14 @@
 
 import ZAI from 'z-ai-web-dev-sdk'
 import type { Modality, ProviderSlug } from './types'
+import { n8nClient } from '@/lib/n8n/client'
+import { N8nTextGenerationDataSchema } from '@/lib/n8n/schemas'
+import { N8nError } from '@/lib/n8n/types'
+import type {
+  N8nContext,
+  N8nTextGenerationPayload,
+  N8nTextGenerationData,
+} from '@/lib/n8n/types'
 
 export interface ChatMessage { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -160,6 +168,178 @@ class OpenAIEmbeddingsAdapter extends StubAdapter {
   slug = 'openai' as const
   modalities: Modality[] = ['EMBEDDING', 'TEXT', 'IMAGE']
   protected label = 'OpenAI'
+}
+
+// ---- n8n adapter (Phase 2.2 — TEXT generation via n8n → OpenRouter) -------
+// This adapter routes text generation through a self-hosted n8n instance.
+// It is NOT registered in the static `adapters` map below because it requires
+// per-request context (userId, workspaceId, provider, model) that the singleton
+// adapters don't have. Instead, engine.ts instantiates it on-demand when the
+// n8n feature flag is enabled and the resolved provider should use n8n.
+//
+// CRITICAL: This adapter enforces EXPLICIT MODEL VERIFICATION. The caller
+// specifies the exact provider + model; n8n must return the same provider +
+// model in its response. If they don't match, the adapter throws MODEL_MISMATCH
+// — no silent substitution, no fallback. This prevents the bug where a
+// different model was silently used instead of the requested one.
+//
+// This adapter does NOT:
+//   - deduct credits (engine.ts does that)
+//   - save conversations (engine.ts does that)
+//   - implement fallback (engine.ts failover loop handles that)
+//   - implement image generation (Phase 3)
+//   - hardcode any API keys, model IDs, or fake responses
+
+/**
+ * Context required to instantiate an N8nAdapter.
+ * Resolved from the authenticated CreatorOS session — never trusted from the client.
+ */
+export interface N8nAdapterContext {
+  /** The authenticated user ID. */
+  userId: string
+  /** The user's role (e.g. 'SUPER_ADMIN', 'MEMBER'). */
+  userRole: string
+  /** The workspace ID. */
+  workspaceId: string
+  /** The workspace plan (e.g. 'PRO'). */
+  workspacePlan: string
+  /** The provider n8n should call (e.g. 'openrouter'). */
+  provider: string
+  /** The EXACT model ID n8n must use (e.g. 'google/gemini-2.5-pro-preview'). */
+  model: string
+  /** Optional locale for the n8n request context. */
+  locale?: string
+  /** Optional timezone for the n8n request context. */
+  timezone?: string
+}
+
+export class N8nAdapter implements ProviderAdapter {
+  slug: ProviderSlug = 'custom' // uses 'custom' since 'n8n' is not a ProviderSlug (no schema change)
+  modalities: Modality[] = ['TEXT']
+
+  constructor(private readonly ctx: N8nAdapterContext) {}
+
+  async generateText(
+    messages: ChatMessage[],
+    opts: { temperature: number; maxTokens: number; systemPrompt: string }
+  ): Promise<TextCompletionResult> {
+    const start = Date.now()
+
+    // 1. Build the n8n context (from authenticated session, not client)
+    const n8nContext: N8nContext = {
+      userId: this.ctx.userId,
+      userRole: this.ctx.userRole,
+      workspaceId: this.ctx.workspaceId,
+      workspacePlan: this.ctx.workspacePlan,
+      locale: this.ctx.locale || 'en',
+      timezone: this.ctx.timezone || 'UTC',
+    }
+
+    // 2. Build the payload — EXPLICIT provider + model
+    // Prepend the system prompt as a system message (standard chat format)
+    const payloadMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = []
+    if (opts.systemPrompt) {
+      payloadMessages.push({ role: 'system', content: opts.systemPrompt })
+    }
+    for (const m of messages) {
+      // Skip any system messages from the input (we already added the systemPrompt above)
+      if (m.role === 'system') continue
+      payloadMessages.push({ role: m.role, content: m.content })
+    }
+
+    const payload: N8nTextGenerationPayload = {
+      provider: this.ctx.provider,
+      model: this.ctx.model,
+      temperature: opts.temperature,
+      maxTokens: opts.maxTokens,
+      messages: payloadMessages,
+    }
+
+    // 3. Call the n8n TEXT_GENERATION workflow
+    // n8nClient.execute() handles: feature-flag check, config check, HMAC signing,
+    // timeout, Zod response validation, and audit logging.
+    const response = await n8nClient.execute<N8nTextGenerationData>(
+      'TEXT_GENERATION',
+      payload as unknown as Record<string, unknown>,
+      n8nContext,
+    )
+
+    // 4. Handle n8n-level failure (success: false from the workflow)
+    if (!response.success) {
+      throw new N8nError(
+        'HTTP_ERROR', // reuse HTTP_ERROR for workflow-level failures
+        `n8n TEXT_GENERATION workflow failed: ${response.error.message}`,
+        {
+          statusCode: 502,
+          requestId: response.requestId,
+          workflow: 'TEXT_GENERATION',
+        },
+      )
+    }
+
+    // 5. Validate the data payload with Zod (never trust arbitrary output)
+    const dataResult = N8nTextGenerationDataSchema.safeParse(response.data)
+    if (!dataResult.success) {
+      const issues = dataResult.error.issues
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; ')
+      throw new N8nError(
+        'INVALID_RESPONSE',
+        `n8n TEXT_GENERATION response data failed validation: ${issues}`,
+        {
+          statusCode: 502,
+          requestId: response.requestId,
+          workflow: 'TEXT_GENERATION',
+        },
+      )
+    }
+
+    const data = dataResult.data
+
+    // 6. EXPLICIT MODEL VERIFICATION — the critical invariant
+    // n8n must return the SAME provider + model it was asked to use.
+    // If they don't match, this is a security issue (n8n may have substituted
+    // a different model). Hard-fail — do NOT silently accept the wrong model.
+    if (data.provider !== this.ctx.provider) {
+      throw new N8nError(
+        'MODEL_MISMATCH',
+        `Provider mismatch: requested "${this.ctx.provider}" but n8n returned "${data.provider}". Refusing to use a different provider.`,
+        {
+          statusCode: 502,
+          requestId: response.requestId,
+          workflow: 'TEXT_GENERATION',
+        },
+      )
+    }
+    if (data.model !== this.ctx.model) {
+      throw new N8nError(
+        'MODEL_MISMATCH',
+        `Model mismatch: requested "${this.ctx.model}" but n8n returned "${data.model}". Refusing to use a different model.`,
+        {
+          statusCode: 502,
+          requestId: response.requestId,
+          workflow: 'TEXT_GENERATION',
+        },
+      )
+    }
+
+    // 7. Build the result
+    const durationMs = Date.now() - start
+    // Use actual token counts if n8n provided them; otherwise estimate (4 chars ≈ 1 token)
+    const inputTokens = data.inputTokens ?? Math.ceil(payloadMessages.reduce((s, m) => s + m.content.length, 0) / 4)
+    const outputTokens = data.outputTokens ?? Math.ceil(data.text.length / 4)
+
+    return {
+      text: data.text,
+      inputTokens,
+      outputTokens,
+      durationMs,
+    }
+  }
+
+  async generateImage(): Promise<ImageResult> {
+    throw new Error('N8nAdapter does not support image generation in Phase 2. Use the existing ZaiAdapter for images.')
+  }
 }
 
 // ---- Registry -------------------------------------------------------------
