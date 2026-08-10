@@ -1,0 +1,315 @@
+{
+  "name": "CreatorOS Text Generation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "text-generation",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "text-generation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.payload.provider }}",
+              "operation": "equals",
+              "value2": "openrouter"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-provider",
+      "name": "Validate Provider",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.payload.model }}",
+              "operation": "isNotEmpty"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-model",
+      "name": "Validate Model",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $credentials.openRouterApi.apiKey }}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://creatoros.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "CreatorOS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"{{ $json.body.payload.model }}\",\n  \"messages\": {{ JSON.stringify($json.body.payload.messages) }},\n  \"temperature\": {{ $json.body.payload.temperature !== undefined ? $json.body.payload.temperature : 0.7 }},\n  \"max_tokens\": {{ $json.body.payload.maxTokens !== undefined ? $json.body.payload.maxTokens : 2000 }}\n}",
+        "options": {
+          "timeout": 55000
+        }
+      },
+      "id": "call-openrouter",
+      "name": "Call OpenRouter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "__USER_MUST_SELECT_CREDENTIAL__",
+          "name": "OpenRouter API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the successful OpenRouter response into CreatorOS contract\nconst openRouterResponse = $input.first().json;\nconst requestBody = $items('Webhook')[0].json.body;\n\n// Extract the actual model OpenRouter used (from its response, not the request)\nconst actualModel = openRouterResponse.model || requestBody.payload.model;\nconst actualProvider = 'openrouter';\n\n// Extract text from the first choice\nconst text = openRouterResponse.choices?.[0]?.message?.content || '';\n\n// Extract token counts if OpenRouter provided them\nconst inputTokens = openRouterResponse.usage?.prompt_tokens || 0;\nconst outputTokens = openRouterResponse.usage?.completion_tokens || 0;\n\n// Build the CreatorOS standard response contract\nconst response = {\n  success: true,\n  requestId: requestBody.requestId,\n  data: {\n    text: text,\n    provider: actualProvider,\n    model: actualModel,\n    inputTokens: inputTokens,\n    outputTokens: outputTokens\n  }\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "format-success",
+      "name": "Format Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 220]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format an error response when validation fails\nconst requestBody = $items('Webhook')[0].json.body;\nconst payload = requestBody.payload || {};\n\nlet errorCode = 'VALIDATION_ERROR';\nlet errorMessage = 'Invalid request payload.';\n\nif (!payload.provider || payload.provider !== 'openrouter') {\n  errorMessage = `Unsupported provider: \"${payload.provider || 'undefined'}\". Only \"openrouter\" is supported by this workflow.`;\n} else if (!payload.model) {\n  errorMessage = 'Missing required field: model. The exact model ID must be specified.';\n}\n\nconst response = {\n  success: false,\n  requestId: requestBody.requestId || 'unknown',\n  error: {\n    code: errorCode,\n    message: errorMessage\n  }\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "format-validation-error",
+      "name": "Format Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-validation-error",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format an error response when OpenRouter fails\n// This catches HTTP errors, timeouts, and invalid responses\nconst requestBody = $items('Webhook')[0].json.body;\nconst errorItem = $input.first().json;\n\n// Extract error details from the OpenRouter HTTP response\nlet errorMessage = 'OpenRouter request failed.';\nlet errorCode = 'PROVIDER_ERROR';\n\nif (errorItem.error) {\n  errorMessage = errorItem.error.message || errorMessage;\n} else if (errorItem.message) {\n  errorMessage = errorItem.message;\n}\n\n// Check for common OpenRouter error patterns\nif (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {\n  errorCode = 'AUTH_ERROR';\n  errorMessage = 'OpenRouter authentication failed. Check the API key in n8n credentials.';\n} else if (errorMessage.includes('404') || errorMessage.includes('not found')) {\n  errorCode = 'MODEL_NOT_FOUND';\n  errorMessage = `OpenRouter could not find the requested model: ${requestBody.payload.model}`;\n} else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {\n  errorCode = 'RATE_LIMITED';\n  errorMessage = 'OpenRouter rate limit exceeded. Please try again later.';\n} else if (errorMessage.includes('timeout') || errorMessage.includes('ETIMEDOUT')) {\n  errorCode = 'TIMEOUT';\n  errorMessage = 'OpenRouter request timed out.';\n}\n\nconst response = {\n  success: false,\n  requestId: requestBody.requestId || 'unknown',\n  error: {\n    code: errorCode,\n    message: errorMessage\n  }\n};\n\nreturn [{ json: response }];"
+      },
+      "id": "format-openrouter-error",
+      "name": "Format OpenRouter Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 340]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 502,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-openrouter-error",
+      "name": "Respond OpenRouter Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 340]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Provider",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Provider": {
+      "main": [
+        [
+          {
+            "node": "Validate Model",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Model": {
+      "main": [
+        [
+          {
+            "node": "Call OpenRouter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call OpenRouter": {
+      "main": [
+        [
+          {
+            "node": "Format Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format OpenRouter Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format OpenRouter Error": {
+      "main": [
+        [
+          {
+            "node": "Respond OpenRouter Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "creatoros"
+    },
+    {
+      "name": "text-generation"
+    },
+    {
+      "name": "openrouter"
+    }
+  ]
+}
