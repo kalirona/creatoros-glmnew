@@ -29,21 +29,26 @@ export const WORKFLOWS: Record<string, WorkflowDef> = {
     responseType: 'json',
   },
 
-  // ── Phase 2+ (future — NOT enabled yet) ─────────────────────────────────
-  // These are placeholders for documentation. They cannot be called until
-  // explicitly enabled in a future phase.
+  // ── Phase 2.3 — Text generation (ACTIVE) ──────────────────────────────
+  // Routes chat requests to OpenRouter via n8n. The feature flag
+  // (N8N_AI_ENABLED env + n8n_ai_enabled DB flag) gates whether
+  // engine.ts actually calls this workflow.
   TEXT_GENERATION: {
     name: 'TEXT_GENERATION',
     webhookId: 'text-generation',
-    description: '[NOT YET MIGRATED] Text generation workflow. Will replace generateText() adapter calls in Phase 2.',
-    enabled: false,
+    description: 'Text generation workflow. Routes chat requests to OpenRouter with the EXACT model specified by CreatorOS. Returns { text, provider, model } for model verification. Phase 2.3 — enabled for OpenRouter text generation.',
+    enabled: true,
     timeoutMs: 60_000,
     responseType: 'json',
   },
+
+  // ── Phase 3+ (future — NOT enabled yet) ─────────────────────────────────
+  // These are placeholders for documentation. They cannot be called until
+  // explicitly enabled in a future phase.
   IMAGE_GENERATION: {
     name: 'IMAGE_GENERATION',
     webhookId: 'image-generation',
-    description: '[NOT YET MIGRATED] Image generation workflow. Will replace generateImage() adapter calls in Phase 2.',
+    description: '[NOT YET MIGRATED] Image generation workflow. Will replace generateImage() adapter calls in Phase 3.',
     enabled: false,
     timeoutMs: 90_000,
     responseType: 'json',

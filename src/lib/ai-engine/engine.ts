@@ -29,7 +29,7 @@
 
 import { db } from '@/lib/db'
 import { resolveRoute, invalidateRouteCache } from './router'
-import { getAdapter, type ChatMessage } from './providers'
+import { getAdapter, N8nAdapter, type ChatMessage } from './providers'
 import {
   checkCredits, deductCredits, trackUsage, trackCost, writeLog,
   checkRateLimit, estimateCost,
@@ -41,6 +41,9 @@ import {
   type GenerateVideoParams, type GenerateVideoResult,
   type RouteCategory,
 } from './types'
+// Phase 2.3 — n8n routing for OpenRouter text generation
+import { isN8nEnabledAsync } from '@/lib/n8n/feature-flag'
+import { N8nError } from '@/lib/n8n/types'
 
 // ─── Load active system prompts from the database ──────────────────────────
 // Super Admin configures prompts in AI Settings → Prompt Library.
@@ -120,14 +123,73 @@ export async function generateText(params: GenerateTextParams): Promise<Generate
 
   // Try the primary route first
   try {
-    const adapter = getAdapter(route.providerSlug as any)
-    completion = await adapter.generateText(messages, {
-      temperature: params.temperature ?? tool.temperature,
-      maxTokens: params.maxTokens ?? tool.maxTokens,
-      systemPrompt,
-    })
+    // ─── n8n routing for OpenRouter (Phase 2.3) ───────────────────────────
+    // When the n8n feature flag is enabled AND the resolved provider is
+    // openrouter, route through N8nAdapter (→ n8n → OpenRouter) instead of
+    // the OpenRouterAdapter stub (which throws).
+    //
+    // CRITICAL: If N8nAdapter fails, we DO NOT fall back to Zai/GLM. The
+    // error propagates to the existing error-handling layer. This prevents
+    // the previous silent model-substitution bug.
+    //
+    // Feature flag OFF → this block is skipped entirely → existing behavior.
+    const useN8nForOpenRouter =
+      route.providerSlug === 'openrouter' &&
+      await isN8nEnabledAsync()
+
+    if (useN8nForOpenRouter) {
+      // Resolve user role + workspace plan for N8nAdapterContext.
+      // These are NOT trusted from the client — resolved from the DB.
+      const [userRow, workspaceRow] = await Promise.all([
+        db.user.findUnique({ where: { id: params.userId }, select: { role: true } }),
+        db.workspace.findUnique({ where: { id: params.workspaceId }, select: { plan: true } }),
+      ])
+
+      const n8nAdapter = new N8nAdapter({
+        userId: params.userId,
+        userRole: userRow?.role || 'MEMBER',
+        workspaceId: params.workspaceId,
+        workspacePlan: workspaceRow?.plan || 'PRO',
+        provider: 'openrouter',
+        // route.modelName is the EXACT provider model string (e.g. 'google/gemini-2.5-pro-preview')
+        // from the ApprovedModel row — NOT a hardcoded or substituted model.
+        model: route.modelName,
+      })
+
+      // Call N8nAdapter. If it throws (NETWORK_ERROR, MODEL_MISMATCH, etc.),
+      // the error propagates — NO silent fallback to Zai/GLM.
+      completion = await n8nAdapter.generateText(messages, {
+        temperature: params.temperature ?? tool.temperature,
+        maxTokens: params.maxTokens ?? tool.maxTokens,
+        systemPrompt,
+      })
+    } else {
+      // Existing behavior — feature flag off OR provider is not openrouter
+      const adapter = getAdapter(route.providerSlug as any)
+      completion = await adapter.generateText(messages, {
+        temperature: params.temperature ?? tool.temperature,
+        maxTokens: params.maxTokens ?? tool.maxTokens,
+        systemPrompt,
+      })
+    }
   } catch (primaryErr) {
-    // Primary failed — try other approved providers with the same modality
+    // ─── n8n error propagation (Phase 2.3) ────────────────────────────────
+    // If the n8n-enabled OpenRouter path failed, DO NOT silently fall back
+    // to Zai/GLM. N8nError is a real, typed error — propagate it directly
+    // to the existing error-handling layer (mapEngineError).
+    //
+    // This is the fix for the "selected one model but GLM was actually used"
+    // bug: previously, the OpenRouter stub threw, and the failover loop
+    // silently switched to GLM. Now, n8n failures are surfaced.
+    const isN8nError = primaryErr instanceof N8nError
+    const wasN8nPath = route.providerSlug === 'openrouter' && await isN8nEnabledAsync()
+
+    if (isN8nError || wasN8nPath) {
+      // Propagate the real n8n error — no silent fallback
+      throw primaryErr
+    }
+
+    // Primary failed (non-n8n path) — try other approved providers with the same modality
     const otherApproved = await db.approvedModel.findMany({
       where: {
         modality: neededModality,
