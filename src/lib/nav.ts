@@ -1,14 +1,20 @@
 import {
   LayoutDashboard, GraduationCap, Users, ShoppingBag, Package,
-  Mail, UserCircle, Link2, BarChart3, Sparkles, LifeBuoy, Settings,
-  CreditCard, Globe, ShieldCheck, Award, FolderOpen, type LucideIcon,
-  Zap, ChevronDown, Cpu, ServerCog,
+  UserCircle, Sparkles, LifeBuoy, Settings,
+  Globe, FolderOpen, type LucideIcon,
+  Cpu, ServerCog,
 } from 'lucide-react'
 
 // ============================================================================
-// CreatorOS Navigation — Creator-first workflow structure
+// CreatorOS Navigation — Simplified creator-first structure
 // ----------------------------------------------------------------------------
-// Creator modules: Dashboard → AI Studio → Courses → Sell → Website → Community → Marketing → Analytics → Settings
+// Focus: Courses, Community, Digital Products, Website, Customers/CRM,
+// and a simple AI Assistant.
+//
+// Secondary features (AI Images, AI Video, Marketing, Affiliates, Automation,
+// Analytics, Memberships, Certificates) are hidden from the creator sidebar
+// but their code/routes/DB models remain intact for future re-enablement.
+//
 // Platform modules (SUPER_ADMIN only): AI Settings + System Settings
 // Business owners, admins, instructors, members, customers NEVER see platform modules.
 // ============================================================================
@@ -43,6 +49,9 @@ export interface NavGroup {
 }
 
 // ─── Creator Navigation (visible to all workspace members) ──────────────────
+// Simplified to core modules only. Hidden modules (analytics, email, affiliates,
+// automation, membership, certificates, ai-studio sub-tabs) are NOT listed here
+// but remain accessible via direct moduleId navigation and their code is intact.
 
 export const NAV_GROUPS: NavGroup[] = [
   {
@@ -55,53 +64,26 @@ export const NAV_GROUPS: NavGroup[] = [
     title: 'Create',
     items: [
       {
-        id: 'ai-studio', label: 'AI Studio', icon: Sparkles, description: 'Generate courses, copy, and content with AI', badge: 'AI', accent: 'text-primary',
-        subItems: [
-          { label: 'AI Chat', moduleId: 'ai-studio', subTab: 'chat' },
-          { label: 'AI Documents', moduleId: 'ai-studio', subTab: 'documents' },
-          { label: 'AI Images', moduleId: 'ai-studio', subTab: 'images' },
-          { label: 'AI Courses', moduleId: 'ai-studio', subTab: 'courses' },
-        ],
-      },
-      {
         id: 'courses', label: 'Courses', icon: GraduationCap, description: 'Build and sell online courses',
         subItems: [
           { label: 'Courses', moduleId: 'courses' },
           { label: 'Students', moduleId: 'courses', subTab: 'students' },
-          { label: 'Certificates', moduleId: 'certificates' },
         ],
       },
-    ],
-  },
-  {
-    title: 'Sell',
-    items: [
+      { id: 'products', label: 'Digital Products', icon: Package, description: 'Sell digital downloads and products' },
       {
-        id: 'store', label: 'Sell', icon: ShoppingBag, description: 'Products, sales, memberships, orders',
-        subItems: [
-          { label: 'Products', moduleId: 'products' },
-          { label: 'Sales', moduleId: 'store' },
-          { label: 'Memberships', moduleId: 'membership' },
-          { label: 'Orders', moduleId: 'store', subTab: 'orders' },
-        ],
-      },
-    ],
-  },
-  {
-    title: 'Presence',
-    items: [
-      {
-        id: 'pages-funnels', label: 'Website', icon: Globe, description: 'Pages, landing pages, blog, SEO, domains',
+        id: 'pages-funnels', label: 'Website', icon: Globe, description: 'Pages, landing pages, blog, SEO',
         subItems: [
           { label: 'Pages', moduleId: 'pages-funnels', subTab: 'pages' },
           { label: 'Landing Pages', moduleId: 'pages-funnels', subTab: 'landing' },
           { label: 'Blog', moduleId: 'pages-funnels', subTab: 'blog' },
-          { label: 'Navigation', moduleId: 'pages-funnels', subTab: 'navigation' },
-          { label: 'Branding', moduleId: 'pages-funnels', subTab: 'branding' },
-          { label: 'SEO', moduleId: 'pages-funnels', subTab: 'seo' },
-          { label: 'Domains', moduleId: 'pages-funnels', subTab: 'domains' },
         ],
       },
+    ],
+  },
+  {
+    title: 'Community',
+    items: [
       {
         id: 'community', label: 'Community', icon: Users, description: 'Feed, spaces, events, members',
         subItems: [
@@ -109,31 +91,44 @@ export const NAV_GROUPS: NavGroup[] = [
           { label: 'Spaces', moduleId: 'community', subTab: 'spaces' },
           { label: 'Events', moduleId: 'community', subTab: 'events' },
           { label: 'Members', moduleId: 'community', subTab: 'members' },
-          { label: 'Leaderboard', moduleId: 'community', subTab: 'leaderboard' },
         ],
       },
     ],
   },
   {
-    title: 'Grow',
+    title: 'Business',
     items: [
       {
-        id: 'email', label: 'Marketing', icon: Mail, description: 'Campaigns, contacts, customers, affiliates, automations',
+        id: 'crm', label: 'Customers', icon: UserCircle, description: 'Customer relationships and contacts',
+      },
+      {
+        id: 'store', label: 'Orders', icon: ShoppingBag, description: 'Orders, sales, and transactions',
         subItems: [
-          { label: 'Campaigns', moduleId: 'email' },
-          { label: 'Contacts', moduleId: 'crm' },
-          { label: 'Affiliates', moduleId: 'affiliates' },
-          { label: 'Automations', moduleId: 'automation' },
+          { label: 'Orders', moduleId: 'store', subTab: 'orders' },
+          { label: 'Sales', moduleId: 'store' },
         ],
       },
-      { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Deep-dive performance across your business' },
+    ],
+  },
+  {
+    title: 'AI',
+    items: [
+      {
+        id: 'ai-studio', label: 'AI Assistant', icon: Sparkles, description: 'AI writing, rewriting, and content assistance', badge: 'AI', accent: 'text-primary',
+        subItems: [
+          { label: 'AI Chat', moduleId: 'ai-studio', subTab: 'chat' },
+          { label: 'AI Documents', moduleId: 'ai-studio', subTab: 'documents' },
+        ],
+      },
     ],
   },
   {
     title: 'System',
     items: [
-      { id: 'media-library', label: 'Media', icon: FolderOpen, description: 'Images, videos, files, and assets' },
-      { id: 'settings', label: 'Settings', icon: Settings, description: 'Workspace, team, billing, security',
+      { id: 'media-library', label: 'Media Library', icon: FolderOpen, description: 'Images, videos, files, and assets' },
+      { id: 'support', label: 'Support', icon: LifeBuoy, description: 'Tickets, help center, live chat' },
+      {
+        id: 'settings', label: 'Settings', icon: Settings, description: 'Workspace, team, billing, security',
         subItems: [
           { label: 'Workspace', moduleId: 'settings', subTab: 'workspace' },
           { label: 'Team', moduleId: 'settings', subTab: 'team' },
@@ -141,7 +136,6 @@ export const NAV_GROUPS: NavGroup[] = [
           { label: 'Security', moduleId: 'settings', subTab: 'security' },
         ],
       },
-      { id: 'support', label: 'Support', icon: LifeBuoy, description: 'Tickets, help center, live chat' },
     ],
   },
 ]
@@ -215,12 +209,12 @@ export function canAccessModule(moduleId: ModuleId, role: UserRole): boolean {
 export const KEYBOARD_SHORTCUTS: { keys: string; label: string; moduleId?: ModuleId }[] = [
   { keys: '⌘K', label: 'Open command palette' },
   { keys: 'G D', label: 'Go to Dashboard', moduleId: 'dashboard' },
-  { keys: 'G A', label: 'Go to AI Studio', moduleId: 'ai-studio' },
+  { keys: 'G A', label: 'Go to AI Assistant', moduleId: 'ai-studio' },
   { keys: 'G C', label: 'Go to Courses', moduleId: 'courses' },
-  { keys: 'G S', label: 'Go to Sell', moduleId: 'store' },
+  { keys: 'G P', label: 'Go to Digital Products', moduleId: 'products' },
   { keys: 'G W', label: 'Go to Website', moduleId: 'pages-funnels' },
   { keys: 'G O', label: 'Go to Community', moduleId: 'community' },
-  { keys: 'G M', label: 'Go to Marketing', moduleId: 'email' },
-  { keys: 'G N', label: 'Go to Analytics', moduleId: 'analytics' },
+  { keys: 'G U', label: 'Go to Customers', moduleId: 'crm' },
+  { keys: 'G O', label: 'Go to Orders', moduleId: 'store' },
   { keys: 'G T', label: 'Go to Settings', moduleId: 'settings' },
 ]

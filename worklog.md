@@ -2039,3 +2039,62 @@ Stage Summary:
 - Files modified: 1 (.env — added commented n8n vars)
 - DB changes: 1 FeatureFlag row added (n8n_ai_enabled, enabled=false)
 - No Prisma schema changes. No existing code modified.
+
+---
+Task ID: PHASE-2-SIMPLIFICATION
+Agent: Main (Z.ai Code)
+Task: Simplify CreatorOS creator-facing navigation — hide secondary features, keep core modules, preserve all code/DB/APIs
+
+Work Log:
+- Audited existing navigation in src/lib/nav.ts (226 lines) — found 6 nav groups with ~15 items including AI Studio (4 sub-tabs), Sell (products/sales/memberships/orders), Presence (website 7 sub-tabs + community 5 sub-tabs), Grow (marketing 4 sub-tabs + analytics), System
+- Restructured NAV_GROUPS to simplified 6-group layout:
+  * HOME: Dashboard
+  * Create: Courses (Courses, Students), Digital Products, Website (Pages, Landing, Blog)
+  * Community: Community (Feed, Spaces, Events, Members)
+  * Business: Customers (CRM), Orders (Orders, Sales)
+  * AI: AI Assistant (AI Chat, AI Documents only — removed AI Images, AI Courses sub-tabs)
+  * System: Media Library, Support, Settings (Workspace, Team, Billing, Security)
+- Hidden from creator sidebar (code/routes/DB intact, just not in nav):
+  * AI Studio → AI Images, AI Videos, AI Courses sub-tabs (only AI Chat + AI Documents remain)
+  * Sell → Memberships, Products (moved to standalone Digital Products item)
+  * Website → Navigation, Branding, SEO, Domains sub-tabs (advanced features, code intact)
+  * Community → Leaderboard sub-tab
+  * Grow group entirely removed (Marketing/Email, Affiliates, Automations, Analytics)
+  * Certificates (was under Courses sub-items)
+- Kept ADMIN_NAV_GROUP completely untouched — Super Admin still sees AI Settings + System Settings with all sub-tabs
+- Updated src/components/app/topbar.tsx:
+  * Removed "Email Campaign" from Create dropdown
+  * Removed "Weekly analytics report ready" notification (analytics hidden)
+  * Updated notification actions: CRM → Orders, "AI Course Generator finished" → "AI Assistant finished"
+  * Removed unused Mail import
+- Updated src/components/app/command-palette.tsx:
+  * Removed keyboard shortcuts for hidden modules (email, membership, analytics, admin)
+  * Updated quick actions: removed "Write an email sequence", changed "Generate a course with AI" → "Generate content with AI"
+- Cleaned up unused imports in nav.ts (Mail, Link2, BarChart3, CreditCard, ShieldCheck, Award, Zap, ChevronDown, BookOpen)
+- Updated KEYBOARD_SHORTCUTS to match new navigation
+- Verified all core modules load correctly via browser test:
+  * Dashboard ✓
+  * Courses ✓
+  * Digital Products ✓
+  * Website ✓
+  * Community ✓
+  * Customers (CRM) ✓
+  * Orders ✓
+  * AI Assistant ✓
+  * Media Library ✓
+  * Support ✓
+  * Settings ✓
+  * AI Settings (Super Admin) ✓
+  * System Settings (Super Admin) ✓
+- Verified hidden modules NOT in sidebar: Marketing, Affiliates, Automation, Analytics, Memberships, Certificates, AI Images, AI Videos, AI Courses, Leaderboard ✓
+- RBAC verified: RbacGuard correctly blocks non-SUPER_ADMIN from platform modules (canAccessModule returns false for ai-settings/system-settings/admin when role !== SUPER_ADMIN)
+- No console errors, no dev log errors
+- ESLint: 0 errors
+- TypeScript: 0 errors in modified files
+
+Stage Summary:
+- Navigation simplified from ~15 items to 11 core items across 6 groups
+- No code deleted, no routes removed, no DB changes — all hidden features remain accessible via direct moduleId navigation
+- Super Admin access preserved (AI Settings + System Settings with all sub-tabs)
+- RBAC guard intact (non-super-admins get 403 page on platform modules)
+- Files changed: src/lib/nav.ts, src/components/app/topbar.tsx, src/components/app/command-palette.tsx

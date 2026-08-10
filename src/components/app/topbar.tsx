@@ -1,5 +1,5 @@
 'use client'
-import { Search, Bell, Sun, Moon, Command, Plus, GraduationCap, Package, Users, Mail, FileText, Sparkles } from 'lucide-react'
+import { Search, Bell, Sun, Moon, Command, Plus, GraduationCap, Package, Users, FileText, Sparkles } from 'lucide-react'
 import { useAppStore } from '@/store/app-store'
 import { ALL_NAV_ITEMS } from '@/lib/nav'
 import { Button } from '@/components/ui/button'
@@ -63,9 +63,6 @@ export function Topbar() {
             <DropdownMenuItem onClick={() => create('New Post', 'community')}>
               <Users className="h-4 w-4 mr-2" /> Community Post
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => create('New Campaign', 'email')}>
-              <Mail className="h-4 w-4 mr-2" /> Email Campaign
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => create('New Page', 'pages-funnels')}>
               <FileText className="h-4 w-4 mr-2" /> Landing Page
             </DropdownMenuItem>
@@ -94,10 +91,9 @@ export function Topbar() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {[
-            { t: 'New sale: Pro Membership', d: '2 min ago', a: '$199.00', action: () => { setActiveModule('crm'); toast.info('Opening CRM') } },
+            { t: 'New sale: Pro Membership', d: '2 min ago', a: '$199.00', action: () => { setActiveModule('store'); toast.info('Opening Orders') } },
             { t: 'Marcus Lee posted in Community', d: '12 min ago', action: () => { setActiveModule('community'); toast.info('Opening Community') } },
-            { t: 'AI Course Generator finished', d: '1 hour ago', action: () => { setActiveModule('ai-studio'); toast.info('Opening AI Studio') } },
-            { t: 'Weekly analytics report ready', d: '3 hours ago', action: () => { setActiveModule('analytics'); toast.info('Opening Analytics') } },
+            { t: 'AI Assistant finished', d: '1 hour ago', action: () => { setActiveModule('ai-studio'); toast.info('Opening AI Assistant') } },
           ].map((n, i) => (
             <DropdownMenuItem key={i} className="flex-col items-start gap-0.5 py-2.5 cursor-pointer" onClick={n.action}>
               <div className="flex w-full items-center justify-between">

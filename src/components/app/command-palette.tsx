@@ -37,8 +37,8 @@ export function CommandPalette() {
       if (firstKey === 'g') {
         const map: Record<string, ModuleId> = {
           d: 'dashboard', a: 'ai-studio', c: 'courses', p: 'products',
-          o: 'community', e: 'email', s: 'settings', m: 'membership',
-          r: 'crm', f: 'pages-funnels', l: 'analytics', x: 'admin',
+          o: 'community', s: 'settings',
+          r: 'crm', f: 'pages-funnels',
         }
         const target = map[e.key.toLowerCase()]
         if (target) {
@@ -76,8 +76,7 @@ export function CommandPalette() {
         ))}
         <CommandSeparator />
         <CommandGroup heading="Quick Actions">
-          <CommandItem onSelect={() => go('ai-studio')}><Search className="h-4 w-4" /> Generate a course with AI</CommandItem>
-          <CommandItem onSelect={() => go('ai-studio')}>Write an email sequence</CommandItem>
+          <CommandItem onSelect={() => go('ai-studio')}><Search className="h-4 w-4" /> Generate content with AI</CommandItem>
           <CommandItem onSelect={() => go('courses')}>Create a new course</CommandItem>
           <CommandItem onSelect={() => go('products')}>Add a digital product</CommandItem>
           <CommandItem onSelect={() => go('community')}>Post in community</CommandItem>
