@@ -46,24 +46,29 @@ import { useApi, formatNumber, timeAgo } from '@/hooks/use-api'
 // 11 tabs · no model names, no provider names, no API keys visible to creators.
 // ============================================================================
 
-type StudioTab =
-  | 'dashboard' | 'chat' | 'documents' | 'images' | 'videos'
-  | 'courses' | 'marketing' | 'media-library' | 'history' | 'settings'
+type StudioTab = 'chat' | 'history' | 'saved'
 
 const TABS: { id: StudioTab; label: string; icon: LucideIcon }[] = [
-  { id: 'dashboard',     label: 'Dashboard',    icon: LayoutDashboard },
-  { id: 'chat',          label: 'AI Chat',      icon: MessageCircle },
-  { id: 'documents',     label: 'Documents',    icon: FileText },
-  { id: 'images',        label: 'Images',       icon: ImageIcon },
-  { id: 'videos',        label: 'Videos',       icon: Film },
-  { id: 'courses',       label: 'Courses',      icon: GraduationCap },
-  { id: 'marketing',     label: 'Marketing',    icon: Mail },
-  { id: 'media-library', label: 'Media Library', icon: FolderOpen },
+  { id: 'chat',          label: 'AI Assistant', icon: MessageCircle },
   { id: 'history',       label: 'History',      icon: History },
-  { id: 'settings',      label: 'Settings',     icon: Settings2 },
+  { id: 'saved',         label: 'Saved Content', icon: FolderOpen },
 ]
 
 const ALL_TABS: StudioTab[] = TABS.map(t => t.id)
+
+// Deprecated tabs from the old AI Studio — mapped to a replacement tab so old
+// sidebar links, bookmarks, and direct URLs redirect to a sensible place
+// instead of showing a broken/empty tab.
+const DEPRECATED_TAB_REDIRECT: Record<string, StudioTab> = {
+  dashboard: 'chat',
+  documents: 'chat',
+  images: 'chat',
+  videos: 'chat',
+  courses: 'chat',
+  marketing: 'chat',
+  'media-library': 'saved',
+  settings: 'chat',
+}
 
 // ─── Asset shape (matches /api/ai/assets serializeCreatorAsset) ─────────────
 interface CreatorAsset {
@@ -280,51 +285,33 @@ function StatusBadge({ status }: { status: string }) {
 
 export function AiStudioModule() {
   const { activeSubTab, navigateTo } = useAppStore()
-  const [tab, setTab] = useState<StudioTab>('dashboard')
+  const [tab, setTab] = useState<StudioTab>('chat')
   const [credits, setCredits] = useState(4280)
-  const [featureSettings, setFeatureSettings] = useState<Record<string, boolean> | null>(null)
 
   useEffect(() => {
-    if (activeSubTab && ALL_TABS.includes(activeSubTab as StudioTab)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTab(activeSubTab as StudioTab)
+    if (activeSubTab) {
+      // If it's a current tab, switch to it
+      if (ALL_TABS.includes(activeSubTab as StudioTab)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setTab(activeSubTab as StudioTab)
+        return
+      }
+      // If it's a deprecated tab, redirect to the replacement
+      const redirect = DEPRECATED_TAB_REDIRECT[activeSubTab]
+      if (redirect) {
+        setTab(redirect)
+        return
+      }
     }
   }, [activeSubTab])
 
-  // Best-effort load of the user's current credit balance + feature settings
+  // Best-effort load of the user's current credit balance
   useEffect(() => {
     fetch('/api/ai/dashboard')
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d && typeof d.creditsRemaining === 'number') setCredits(d.creditsRemaining) })
       .catch(() => {})
-    // Load AI feature settings to show/hide tabs
-    fetch('/api/ai/features')
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.features) setFeatureSettings(d.features) })
-      .catch(() => {})
   }, [])
-
-  // Map AI Studio tabs to feature IDs
-  const TAB_FEATURE_MAP: Record<StudioTab, string | null> = {
-    dashboard: null, // always show
-    chat: 'chat',
-    documents: 'document',
-    images: 'images',
-    videos: 'video',
-    courses: 'course',
-    marketing: 'email',
-    'media-library': null, // always show
-    history: null, // always show
-    settings: null, // always show
-  }
-
-  // Filter tabs based on feature settings (null = always show)
-  const visibleTabs = TABS.filter((t) => {
-    const featureId = TAB_FEATURE_MAP[t.id]
-    if (!featureId) return true // always show
-    if (!featureSettings) return true // not loaded yet — show all
-    return featureSettings[featureId] !== false // show unless explicitly disabled
-  })
 
   return (
     <div className="space-y-5">
@@ -337,12 +324,12 @@ export function AiStudioModule() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold">AI Studio</h2>
+                <h2 className="text-lg font-bold">AI Assistant</h2>
                 <Badge variant="secondary" className="bg-primary/15 text-primary border-primary/20">
                   <Zap className="h-2.5 w-2.5 mr-1" /> Creator AI
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">Generate, edit, and publish AI-powered content across your workspace.</p>
+              <p className="text-sm text-muted-foreground">Write, improve, and brainstorm content for your business.</p>
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 px-4 py-2">
@@ -357,7 +344,7 @@ export function AiStudioModule() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as StudioTab)}>
         <div className="overflow-x-auto scroll-thin pb-1">
           <TabsList className="flex h-auto gap-1">
-            {visibleTabs.map((t) => {
+            {TABS.map((t) => {
               const Icon = t.icon
               return (
                 <TabsTrigger key={t.id} value={t.id} className="text-sm gap-2 px-4 py-2">
@@ -368,16 +355,9 @@ export function AiStudioModule() {
           </TabsList>
         </div>
 
-        <TabsContent value="dashboard"><DashboardTab credits={credits} onNavigate={setTab} /></TabsContent>
         <TabsContent value="chat"><ChatTab onCreditsUpdate={setCredits} /></TabsContent>
-        <TabsContent value="documents"><DocumentsTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
-        <TabsContent value="images"><ImagesTab onCreditsUpdate={setCredits} /></TabsContent>
-        <TabsContent value="videos"><VideosTab onCreditsUpdate={setCredits} /></TabsContent>
-        <TabsContent value="courses"><CoursesTab onCreditsUpdate={setCredits} onNavigate={(m, s) => navigateTo(m as any, s)} /></TabsContent>
-        <TabsContent value="marketing"><MarketingTab onCreditsUpdate={setCredits} /></TabsContent>
-        <TabsContent value="media-library"><MediaLibraryTab onNavigate={setTab} /></TabsContent>
         <TabsContent value="history"><HistoryTab /></TabsContent>
-        <TabsContent value="settings"><SettingsTab credits={credits} /></TabsContent>
+        <TabsContent value="saved"><SavedContentTab /></TabsContent>
       </Tabs>
     </div>
   )
@@ -387,7 +367,11 @@ export function AiStudioModule() {
 // 1. Dashboard Tab
 // ============================================================================
 
-function DashboardTab({ credits, onNavigate }: { credits: number; onNavigate: (tab: StudioTab) => void }) {
+// DashboardTab is deprecated — no longer rendered in the simplified AI Studio.
+// Kept for code stability; will be removed in a future cleanup phase.
+// Using `string` for onNavigate so the old code compiles without referencing
+// deprecated StudioTab values.
+function DashboardTab({ credits, onNavigate }: { credits: number; onNavigate: (tab: string) => void }) {
   const { data, loading, refetch } = useApi<DashboardData>('/api/ai/dashboard')
 
   const stats = [
@@ -397,7 +381,9 @@ function DashboardTab({ credits, onNavigate }: { credits: number; onNavigate: (t
     { label: 'Assets in Library', value: data ? Object.values(data.assetCounts).reduce((a, b) => a + b, 0) : 0, icon: FolderOpen, color: 'text-violet-600', bg: 'bg-violet-500/10' },
   ]
 
-  const quickActions: { label: string; desc: string; icon: LucideIcon; tab: StudioTab; color: string }[] = [
+  // DashboardTab is deprecated (no longer rendered in the simplified AI Studio).
+  // Kept for code stability — will be removed in a future cleanup phase.
+  const quickActions: { label: string; desc: string; icon: LucideIcon; tab: string; color: string }[] = [
     { label: 'Generate Course', desc: 'AI builds a complete course outline', icon: GraduationCap, tab: 'courses', color: 'bg-emerald-500/10 text-emerald-600' },
     { label: 'Generate Image', desc: 'Create custom AI imagery', icon: ImageIcon, tab: 'images', color: 'bg-amber-500/10 text-amber-600' },
     { label: 'Generate Video', desc: 'Short-form video for social', icon: Film, tab: 'videos', color: 'bg-rose-500/10 text-rose-600' },
@@ -1658,6 +1644,16 @@ function MarketingTab({ onCreditsUpdate }: { onCreditsUpdate: (c: number) => voi
 // ============================================================================
 // 9. Media Library Tab — NEW
 // ============================================================================
+
+// ─── Saved Content Tab (simplified wrapper around MediaLibraryTab) ──────────
+// This is the creator-facing "Saved Content" tab — shows AI-generated assets
+// (documents, images, videos) that the creator has saved. Reuses the existing
+// MediaLibraryTab implementation without duplicating code.
+function SavedContentTab() {
+  return <MediaLibraryTab onNavigate={() => {}} />
+}
+
+// ─── Media Library Tab (full implementation — used by SavedContentTab) ─────
 
 function MediaLibraryTab({ onNavigate: _onNavigate }: { onNavigate: (tab: StudioTab) => void }) {
   const [folder, setFolder] = useState<string>('') // '' = All
