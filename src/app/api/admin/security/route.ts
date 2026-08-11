@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 const SECURITY_SETTING_KEYS = [
@@ -19,6 +20,9 @@ const SECURITY_DEFAULTS: Record<string, string> = {
 // ─── GET — security posture ───────────────────────────────────────────────
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const now = new Date()
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -109,6 +113,9 @@ export async function GET() {
 // ─── PATCH — update security settings (stored in AdminSetting) ────────────
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const updates = body as Record<string, unknown>
 

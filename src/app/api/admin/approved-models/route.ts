@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateRouteCache } from '@/lib/ai-engine'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_MODALITIES = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT', 'TTS', 'VISION']
@@ -9,6 +10,9 @@ const ALLOWED_MODALITIES = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT
 // Supports filters: ?modality= &isEnabled= &workspaceVisible=
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { searchParams } = new URL(req.url)
     const modality = searchParams.get('modality') || undefined
     const isEnabled = searchParams.get('isEnabled')
@@ -36,6 +40,9 @@ export async function GET(req: NextRequest) {
 // Body: { providerModelId: string } OR { providerId, modelId, displayName, modality, ... }
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { providerModelId } = body as { providerModelId?: string }
 
@@ -113,6 +120,9 @@ export async function POST(req: NextRequest) {
 // PUT — update an approved model (enable/disable, set default, update display name, etc.)
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { id, isDefault, isEnabled, workspaceVisible, displayName, priority, creditsMultiplier } = body as Record<string, unknown>
 
@@ -161,6 +171,9 @@ export async function PUT(req: NextRequest) {
 // DELETE — remove a model from the approved catalog (creators will no longer see it)
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })

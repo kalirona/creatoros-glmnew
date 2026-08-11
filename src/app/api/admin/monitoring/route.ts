@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 function toNum(b: bigint | null | undefined): number {
@@ -10,6 +11,9 @@ function toNum(b: bigint | null | undefined): number {
 // ─── GET — real-time system metrics for Super Admin monitoring dashboard ──
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)

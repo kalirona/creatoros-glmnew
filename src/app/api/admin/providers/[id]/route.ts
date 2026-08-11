@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { maskApiKey, invalidateRouteCache } from '@/lib/ai-engine'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_AUTH_TYPES = ['bearer', 'x-api-key', 'custom-header', 'query-param']
@@ -21,6 +22,9 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
 
     const provider = await db.aiProvider.findUnique({
@@ -99,6 +103,9 @@ export async function PATCH(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
     const updates = await req.json()
 
@@ -191,6 +198,9 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
 
     const provider = await db.aiProvider.findUnique({ where: { id } })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { ROUTE_CATEGORIES, type ProviderSlug } from '@/lib/provider-gateway'
 import { updateRouteFailover } from '@/lib/provider-gateway/failover'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,9 @@ export const dynamic = 'force-dynamic'
 // return primary/fallback provider info + strategy + isActive.
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const categories = ROUTE_CATEGORIES
 
     // Fetch all routes in one query
@@ -53,6 +57,9 @@ export async function GET() {
 //   - Invalidates the route cache
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { category, primaryProviderSlug, fallbackProviderSlug } = body as {
       category?: string

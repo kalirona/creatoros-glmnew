@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // ─── GET — paginated AiLog list with filters ──────────────────────────────
@@ -7,6 +8,9 @@ export const dynamic = 'force-dynamic'
 //          &requestType=&from=&to=
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { searchParams } = new URL(req.url)
     const page = Math.max(1, Number(searchParams.get('page') || '1'))
     const pageSize = Math.min(100, Math.max(1, Number(searchParams.get('pageSize') || '50')))

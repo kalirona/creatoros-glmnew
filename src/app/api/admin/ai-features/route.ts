@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // GET — return AI feature settings (stored as JSON in AdminSetting key='ai_features')
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const setting = await db.adminSetting.findUnique({ where: { key: 'ai_features' } })
     let features: Record<string, boolean> = {}
     if (setting?.value) {
@@ -40,6 +44,9 @@ export async function GET() {
 // PUT — update a single feature's enabled state
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { featureId, enabled } = body as { featureId: string; enabled: boolean }
 

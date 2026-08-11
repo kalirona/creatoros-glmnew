@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { maskApiKey, invalidateRouteCache } from '@/lib/ai-engine'
 import { PROVIDER_REGISTRY } from '@/lib/provider-gateway'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -19,6 +20,9 @@ const ALLOWED_AUTH_TYPES = ['bearer', 'x-api-key', 'custom-header', 'query-param
 // ─── GET — list all providers with masked keys, models, and today's stats ──
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const now = new Date()
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
 
@@ -122,6 +126,9 @@ export async function GET() {
 // ─── POST — create a new provider (for "Add Custom Provider" flow) ──────────
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const {
       slug, name, baseUrl, authType, headers, capabilities, description,
@@ -211,6 +218,9 @@ export async function POST(req: NextRequest) {
 // ─── PUT — update a provider (extended field set + cache bust) ──────────────
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { id, ...updates } = body
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // Convert BigInt → Number (safe for our use cases; storage is < 2^53 bytes)
@@ -11,6 +12,9 @@ function toNum(b: bigint | null | undefined): number {
 // ─── GET — per-workspace storage summary + totals across all workspaces ───
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const stores = await db.aiStorage.findMany({
       orderBy: { totalBytes: 'desc' },
     })
@@ -63,6 +67,9 @@ export async function GET() {
 // Body: { workspaceId, quotaBytes }
 export async function PATCH(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { workspaceId, quotaBytes } = body as {
       workspaceId?: string

@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // ─── GET — global credit summary (Super Admin view) ───────────────────────
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const [issuedAgg, spentAgg, circulationAgg, recentTxns, totalUsers] = await Promise.all([
       // Credits issued = sum of positive CreditTransaction.amount
       db.creditTransaction.aggregate({

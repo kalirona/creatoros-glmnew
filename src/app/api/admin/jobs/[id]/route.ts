@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // ─── GET — single AiJob detail ────────────────────────────────────────────
@@ -8,6 +9,9 @@ export async function GET(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
 
     const job = await db.aiJob.findUnique({
@@ -37,6 +41,9 @@ export async function PATCH(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
     const body = await req.json()
     const { status, progress, errorMessage } = body as {
@@ -78,6 +85,9 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
 
     const existing = await db.aiJob.findUnique({ where: { id } })

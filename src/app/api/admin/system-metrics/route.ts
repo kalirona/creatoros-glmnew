@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import os from 'os'
 import { db } from '@/lib/db'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // GET — return REAL system metrics (no hardcoded/demo data)
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     // Process memory (real Node.js process memory)
     const mem = process.memoryUsage()
     const totalMem = os.totalmem()

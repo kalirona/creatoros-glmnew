@@ -381,11 +381,11 @@ export function AiFeaturesPanel() {
 export function UsageAnalyticsPanel() {
   const { data, loading } = useApi<{
     today: { requests: number; costUsd: number; successRate: number; avgLatencyMs: number }
-    thisMonth: { requests: number; costUsd: number }
     perProviderHealth: { id: string; name: string; slug: string; isHealthy: boolean; todayCost: number; todayRequests: number; todayFailures: number }[]
   }>('/api/admin/monitoring')
 
   const { data: costsData } = useApi<{
+    thisMonth?: { totalCostUsd: number; requests: number }
     dailySeries: { day: string; totalCostUsd: number; requests: number; failures: number }[]
   }>('/api/admin/costs')
 
@@ -397,6 +397,9 @@ export function UsageAnalyticsPanel() {
 
   const dailySeries = costsData?.dailySeries || []
   const maxCost = Math.max(...dailySeries.map((d) => d.totalCostUsd), 0.001)
+  const thisMonth = costsData?.thisMonth
+  const monthRequests = thisMonth?.requests ?? dailySeries.reduce((s, d) => s + d.requests, 0)
+  const monthCost = thisMonth?.totalCostUsd ?? dailySeries.reduce((s, d) => s + d.totalCostUsd, 0)
 
   return (
     <div className="space-y-4">
@@ -419,9 +422,9 @@ export function UsageAnalyticsPanel() {
       <Card>
         <CardHeader><CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-amber-500" />Monthly Summary</CardTitle></CardHeader>
         <CardContent className="grid sm:grid-cols-3 gap-4">
-          <div><p className="text-xs text-muted-foreground">Total Requests</p><p className="text-2xl font-bold tabular-nums mt-1">{formatNumber(data.thisMonth.requests)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Total Cost</p><p className="text-2xl font-bold tabular-nums mt-1">${data.thisMonth.costUsd.toFixed(2)}</p></div>
-          <div><p className="text-xs text-muted-foreground">Avg Cost / Request</p><p className="text-2xl font-bold tabular-nums mt-1">${data.thisMonth.requests > 0 ? (data.thisMonth.costUsd / data.thisMonth.requests).toFixed(4) : '0.00'}</p></div>
+          <div><p className="text-xs text-muted-foreground">Total Requests</p><p className="text-2xl font-bold tabular-nums mt-1">{formatNumber(monthRequests)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Total Cost</p><p className="text-2xl font-bold tabular-nums mt-1">${monthCost.toFixed(2)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Avg Cost / Request</p><p className="text-2xl font-bold tabular-nums mt-1">${monthRequests > 0 ? (monthCost / monthRequests).toFixed(4) : '0.00'}</p></div>
         </CardContent>
       </Card>
 

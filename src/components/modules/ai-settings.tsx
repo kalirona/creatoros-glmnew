@@ -1,52 +1,65 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import {
-  Cpu, Gauge, Server, KeyRound, ArrowRightLeft, Coins, ClipboardList,
-  Activity, FileText, DollarSign, Lock, BookOpen, ToggleRight, BarChart3,
-  ShieldCheck, Zap,
+  Cpu, Gauge, Server, ArrowRightLeft, Coins,
+  FileText, BookOpen, BarChart3,
+  ShieldCheck,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Skeleton } from '@/components/ui/skeleton'
-import { useApi, formatNumber } from '@/hooks/use-api'
+import { useApi } from '@/hooks/use-api'
 import { useAppStore } from '@/store/app-store'
-import { cn } from '@/lib/utils'
 // Reuse existing panels from admin.tsx (no duplication)
 import {
-  DashboardPanel, ProvidersPanel, ApiKeysPanel, ModelsPanel, RoutingPanel,
-  CreditsPanel, JobsPanel, MonitoringPanel, LogsPanel, CostsPanel, SecurityPanel,
+  DashboardPanel, ProvidersPanel, ModelsPanel, RoutingPanel,
+  CreditsPanel, LogsPanel,
 } from '@/components/modules/admin'
 // New panels unique to AI Settings
-import { PromptLibraryPanel, AiFeaturesPanel, UsageAnalyticsPanel } from '@/components/modules/ai-settings-panels'
+import { PromptLibraryPanel, UsageAnalyticsPanel } from '@/components/modules/ai-settings-panels'
 
-type AiTab = 'dashboard' | 'providers' | 'keys' | 'models' | 'routing' | 'credits' | 'prompts' | 'features' | 'logs' | 'usage' | 'security'
+// Simplified tab structure — Phase: AI Super Admin Simplification
+// Target: Overview, Providers, Models, Routing, Prompts, Credits, Usage, Logs
+// Removed: separate API Keys tab (merged into Providers), AI Features tab (folded into Overview),
+//          Security tab (accessible from Overview, still exists as a panel)
+type AiTab = 'overview' | 'providers' | 'models' | 'routing' | 'prompts' | 'credits' | 'usage' | 'logs'
 
 const TABS: { id: AiTab; label: string; icon: typeof Cpu }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: Gauge },
+  { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'providers', label: 'Providers', icon: Server },
-  { id: 'keys', label: 'API Keys', icon: KeyRound },
   { id: 'models', label: 'Models', icon: Cpu },
   { id: 'routing', label: 'Routing', icon: ArrowRightLeft },
+  { id: 'prompts', label: 'Prompts', icon: BookOpen },
   { id: 'credits', label: 'Credits', icon: Coins },
-  { id: 'prompts', label: 'Prompt Library', icon: BookOpen },
-  { id: 'features', label: 'AI Features', icon: ToggleRight },
-  { id: 'logs', label: 'Logs', icon: FileText },
   { id: 'usage', label: 'Usage', icon: BarChart3 },
-  { id: 'security', label: 'Security', icon: Lock },
+  { id: 'logs', label: 'Logs', icon: FileText },
 ]
 
 export function AiSettingsModule() {
   const { activeSubTab } = useAppStore()
-  const [tab, setTab] = useState<AiTab>('dashboard')
+  const [tab, setTab] = useState<AiTab>('overview')
 
   useEffect(() => {
     if (activeSubTab) {
-      const valid: string[] = ['dashboard', 'providers', 'keys', 'models', 'routing', 'credits', 'prompts', 'features', 'logs', 'usage', 'security']
-      if (valid.includes(activeSubTab)) {
+      // Map old tab IDs to new ones for backward compat with existing sidebar links
+      const tabMap: Record<string, AiTab> = {
+        dashboard: 'overview',
+        overview: 'overview',
+        providers: 'providers',
+        keys: 'providers', // API Keys merged into Providers
+        models: 'models',
+        routing: 'routing',
+        credits: 'credits',
+        prompts: 'prompts',
+        features: 'overview', // AI Features folded into Overview
+        logs: 'logs',
+        usage: 'usage',
+        security: 'overview', // Security accessible from Overview
+      }
+      const mapped = tabMap[activeSubTab]
+      if (mapped) {
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setTab(activeSubTab as AiTab)
+        setTab(mapped)
       }
     }
   }, [activeSubTab])
@@ -68,7 +81,7 @@ export function AiSettingsModule() {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground">
-                Manage AI providers, models, routing, credits, prompt library, features, logs &amp; security.
+                AI infrastructure: providers, models, routing, prompts, credits &amp; usage.
               </p>
             </div>
           </div>
@@ -90,17 +103,14 @@ export function AiSettingsModule() {
           </TabsList>
         </div>
 
-        <TabsContent value="dashboard"><DashboardPanel onJump={(t) => setTab(t as AiTab)} /></TabsContent>
+        <TabsContent value="overview"><DashboardPanel onJump={(t) => setTab(t as AiTab)} /></TabsContent>
         <TabsContent value="providers"><ProvidersPanel /></TabsContent>
-        <TabsContent value="keys"><ApiKeysPanel /></TabsContent>
         <TabsContent value="models"><ModelsPanel /></TabsContent>
         <TabsContent value="routing"><RoutingPanel /></TabsContent>
-        <TabsContent value="credits"><CreditsPanel /></TabsContent>
         <TabsContent value="prompts"><PromptLibraryPanel /></TabsContent>
-        <TabsContent value="features"><AiFeaturesPanel /></TabsContent>
-        <TabsContent value="logs"><LogsPanel /></TabsContent>
+        <TabsContent value="credits"><CreditsPanel /></TabsContent>
         <TabsContent value="usage"><UsageAnalyticsPanel /></TabsContent>
-        <TabsContent value="security"><SecurityPanel /></TabsContent>
+        <TabsContent value="logs"><LogsPanel /></TabsContent>
       </Tabs>
     </div>
   )

@@ -149,16 +149,14 @@ export const ADMIN_NAV_GROUP: NavGroup = {
     {
       id: 'ai-settings', label: 'AI Settings', icon: Cpu, description: 'AI providers, models, routing, credits, logs', badge: 'Admin', accent: 'text-amber-500',
       subItems: [
-        { label: 'Dashboard', moduleId: 'ai-settings' },
+        { label: 'Overview', moduleId: 'ai-settings' },
         { label: 'Providers', moduleId: 'ai-settings', subTab: 'providers' },
         { label: 'Models', moduleId: 'ai-settings', subTab: 'models' },
         { label: 'Routing', moduleId: 'ai-settings', subTab: 'routing' },
+        { label: 'Prompts', moduleId: 'ai-settings', subTab: 'prompts' },
         { label: 'Credits', moduleId: 'ai-settings', subTab: 'credits' },
-        { label: 'Prompt Library', moduleId: 'ai-settings', subTab: 'prompts' },
-        { label: 'AI Features', moduleId: 'ai-settings', subTab: 'features' },
-        { label: 'Logs', moduleId: 'ai-settings', subTab: 'logs' },
         { label: 'Usage', moduleId: 'ai-settings', subTab: 'usage' },
-        { label: 'Security', moduleId: 'ai-settings', subTab: 'security' },
+        { label: 'Logs', moduleId: 'ai-settings', subTab: 'logs' },
       ],
     },
     {

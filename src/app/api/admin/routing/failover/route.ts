@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { type ProviderSlug } from '@/lib/provider-gateway'
 import { DEFAULT_FAILOVER_CHAINS, getFailoverChain, updateRouteFailover } from '@/lib/provider-gateway/failover'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,6 +11,9 @@ export const dynamic = 'force-dynamic'
 // with their isActive/isHealthy status.
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const providers = await db.aiProvider.findMany({
       select: { id: true, slug: true, name: true, isActive: true, isHealthy: true },
     })
@@ -43,6 +47,9 @@ export async function GET() {
 // rest of the chain uses DEFAULT_FAILOVER_CHAINS.
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const { category, chain } = body as { category?: string; chain?: string[] }
 

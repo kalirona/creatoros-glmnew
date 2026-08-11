@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateRouteCache } from '@/lib/ai-engine'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_MODALITIES = ['TEXT', 'IMAGE', 'VIDEO', 'AUDIO', 'EMBEDDING', 'STT', 'TTS']
@@ -20,6 +21,9 @@ function safeJsonParse<T>(s: string | null | undefined, fallback: T): T {
 // parses providerTags from its stored JSON string into a string[].
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { searchParams } = new URL(req.url)
     const providerId = searchParams.get('providerId') || undefined
     const modality = searchParams.get('modality') || undefined
@@ -52,6 +56,9 @@ export async function GET(req: NextRequest) {
 // supplies pricing (so future syncs won't overwrite it).
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const {
       providerId, name, displayName, modality,
@@ -168,6 +175,9 @@ export async function POST(req: NextRequest) {
 // and all capability flags.
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const {
       id, providerId, name, displayName, modality,

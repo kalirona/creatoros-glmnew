@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { invalidateRouteCache } from '@/lib/ai-engine'
 import { maskApiKey, type ProviderSlug } from '@/lib/provider-gateway'
 import { validateProviderKey } from '@/lib/provider-gateway/discovery'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
     const body = await req.json()
     const { apiKey } = body as { apiKey?: string }

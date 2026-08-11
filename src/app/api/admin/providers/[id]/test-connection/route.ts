@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { runHealthCheck } from '@/lib/provider-gateway/health'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
 
     const provider = await db.aiProvider.findUnique({

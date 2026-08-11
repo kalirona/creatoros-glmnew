@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { runTestPrompt } from '@/lib/provider-gateway/health'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
     const body = await req.json()
     const { modelId, prompt } = body as { modelId?: string; prompt?: string }

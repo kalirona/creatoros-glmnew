@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { invalidateRouteCache } from '@/lib/ai-engine'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_CATEGORIES = [
@@ -13,6 +14,9 @@ const ALLOWED_STRATEGIES = ['smart', 'cost', 'quality', 'round_robin']
 // ─── GET — list all routes with provider + fallback provider names ────────
 export async function GET() {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const routes = await db.aiRoute.findMany({
       include: {
         provider: { select: { id: true, name: true, slug: true, isActive: true } },
@@ -46,6 +50,9 @@ export async function GET() {
 // ─── PUT — update a route ──────────────────────────────────────────────────
 export async function PUT(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const {
       id, providerId, fallbackProviderId, modelId, strategy, weight, isActive,
@@ -94,6 +101,9 @@ export async function PUT(req: NextRequest) {
 // ─── POST — create a new route ────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const body = await req.json()
     const toolCategory = typeof body?.toolCategory === 'string' ? body.toolCategory : ''
     const providerId = typeof body?.providerId === 'string' ? body.providerId : ''

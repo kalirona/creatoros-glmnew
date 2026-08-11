@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { maskApiKey, invalidateRouteCache } from '@/lib/ai-engine'
+import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 // ─── POST — rotate a provider's API key ────────────────────────────────────
@@ -17,6 +18,9 @@ export async function POST(
   ctx: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSuperAdmin()
+    if (auth.error) return auth.error
+
     const { id } = await ctx.params
     const body = await req.json()
     const { newKey } = body as { newKey?: string }
