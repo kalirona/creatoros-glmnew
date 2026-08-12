@@ -1,26 +1,38 @@
 # ============================================================================
-# Dockerfile — CreatorOS (Next.js 16 standalone + Prisma + Bun)
+# Dockerfile — CreatorOS (Next.js 16 standalone + Prisma)
 # ----------------------------------------------------------------------------
-# Multi-stage build for minimal production image.
-# Uses Bun for install + build, Node.js for runtime (standalone output).
+# Multi-stage build:
+#   Stage 1 (bun): Install dependencies (Bun is fast for installs)
+#   Stage 2 (node): Build Next.js (Node.js needed for worker_threads + webpack)
+#   Stage 3 (node:slim): Production runtime
 # ============================================================================
 
-# ─── Stage 1: Install dependencies + build ──────────────────────────────────
-FROM oven/bun:1.1 AS builder
+# ─── Stage 1: Install dependencies (Bun — fast install) ─────────────────────
+FROM oven/bun:1.1 AS deps
 WORKDIR /app
 
 # Copy package files + Prisma schema first
-# (postinstall script runs prisma generate, which needs the schema)
 COPY package.json bun.lock* ./
 COPY prisma ./prisma
 
-# Install dependencies
-# --ignore-scripts skips postinstall (we run prisma generate explicitly below)
-# to avoid race conditions with schema not being available
+# Install dependencies (skip postinstall — we generate Prisma in stage 2)
 RUN bun install --ignore-scripts
 
-# Generate Prisma client (now schema is available)
-RUN bunx prisma generate
+# ─── Stage 2: Build (Node.js — needed for worker_threads + webpack) ─────────
+FROM node:20-slim AS builder
+WORKDIR /app
+
+# Install bun in the node image (for running scripts if needed)
+RUN npm install -g bun
+
+# Copy installed dependencies from Bun stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/package.json ./package.json
+COPY --from=deps /app/bun.lock* ./
+
+# Copy Prisma schema + generate client
+COPY prisma ./prisma
+RUN npx prisma generate
 
 # Copy all source files
 COPY . .
@@ -29,14 +41,18 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
-# Build Next.js standalone output
-# The build script runs: next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
-RUN bun run build
+# Build Next.js standalone output using webpack (not Turbopack)
+# Using npx next build ensures Node.js runs the build, not Bun
+RUN npx next build --webpack
+
+# Copy static files + public into standalone (required for standalone output)
+RUN cp -r .next/static .next/standalone/.next/ && \
+    cp -r public .next/standalone/
 
 # Verify the standalone build exists
 RUN ls -la .next/standalone/server.js || (echo "ERROR: standalone build failed" && exit 1)
 
-# ─── Stage 2: Production runtime ────────────────────────────────────────────
+# ─── Stage 3: Production runtime ────────────────────────────────────────────
 FROM node:20-slim AS runner
 WORKDIR /app
 
@@ -74,7 +90,7 @@ USER nextjs
 
 EXPOSE 3000
 
-# Health check using wget (more reliable than node fetch in slim images)
+# Health check using wget
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/ai/features || exit 1
 
