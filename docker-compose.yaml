@@ -1,0 +1,49 @@
+# ============================================================================
+# docker-compose.yml — CreatorOS for Dokploy
+# ----------------------------------------------------------------------------
+# Dokploy looks for docker-compose.yml by default.
+# This file defines the CreatorOS service with persistent storage.
+#
+# Environment variables should be set in Dokploy's service settings:
+#   - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+#   - CLERK_SECRET_KEY
+#   - DATABASE_URL (defaults to SQLite at /app/db/custom.db)
+#   - N8N_* (optional n8n integration)
+# ============================================================================
+
+services:
+  creatoros:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: creatoros
+    restart: unless-stopped
+    ports:
+      - "3012:3012"
+    environment:
+      - NODE_ENV=production
+      - PORT=3012
+      - DATABASE_URL=file:/app/db/custom.db
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
+      - NEXT_PUBLIC_CLERK_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_SIGN_IN_URL:-/sign-in}
+      - NEXT_PUBLIC_CLERK_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_URL:-/sign-up}
+      - NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=${NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL:-/}
+      - NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=${NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL:-/}
+      - N8N_BASE_URL=${N8N_BASE_URL:-}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - N8N_WEBHOOK_SECRET=${N8N_WEBHOOK_SECRET:-}
+      - N8N_TIMEOUT_MS=${N8N_TIMEOUT_MS:-30000}
+      - N8N_AI_ENABLED=${N8N_AI_ENABLED:-false}
+    volumes:
+      - creatoros-db:/app/db
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3012/api/ai/features"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  creatoros-db:
+    driver: local
