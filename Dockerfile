@@ -56,7 +56,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
+ENV PORT=3012
 ENV HOSTNAME=0.0.0.0
 
 # Install openssl (needed by Prisma on slim images)
@@ -86,11 +86,11 @@ RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
 # Switch to non-root user
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 3012
 
 # Health check using wget
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/ai/features || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3012/api/ai/features || exit 1
 
 # Start the standalone server (Node.js, not Bun — for production stability)
 CMD ["node", "server.js"]
