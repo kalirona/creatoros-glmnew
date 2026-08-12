@@ -2,13 +2,14 @@
 # Dockerfile — CreatorOS (Next.js 16 standalone + Prisma)
 # ----------------------------------------------------------------------------
 # Multi-stage build:
-#   Stage 1 (bun): Install dependencies (Bun is fast for installs)
-#   Stage 2 (node): Build Next.js (Node.js needed for worker_threads + webpack)
-#   Stage 3 (node:slim): Production runtime
+#   Stage 1 (bun:1.3): Install dependencies (fast, matches local lockfile)
+#   Stage 2 (node:20): Build Next.js (Node.js needed for worker_threads)
+#   Stage 3 (node:20-slim): Production runtime
 # ============================================================================
 
 # ─── Stage 1: Install dependencies (Bun — fast install) ─────────────────────
-FROM oven/bun:1.1 AS deps
+# Use bun:1.3 to match local bun 1.3.x lockfile format (JSON, not binary)
+FROM oven/bun:1.3 AS deps
 WORKDIR /app
 
 # Copy package files + Prisma schema first
@@ -21,9 +22,6 @@ RUN bun install --ignore-scripts
 # ─── Stage 2: Build (Node.js — needed for worker_threads + webpack) ─────────
 FROM node:20-slim AS builder
 WORKDIR /app
-
-# Install bun in the node image (for running scripts if needed)
-RUN npm install -g bun
 
 # Copy installed dependencies from Bun stage
 COPY --from=deps /app/node_modules ./node_modules
@@ -94,5 +92,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/ai/features || exit 1
 
-# Start the standalone server
+# Start the standalone server (Node.js, not Bun — for production stability)
 CMD ["node", "server.js"]
