@@ -3,17 +3,13 @@ set -e
 
 # ============================================================================
 # Entrypoint — initialize database + start server
-# ----------------------------------------------------------------------------
-# On first container start, the SQLite database is empty (fresh volume).
-# This script runs prisma db push to create all tables before starting
-# the Next.js server.
 # ============================================================================
 
 echo "🔄 Initializing database schema..."
-npx prisma db push --accept-data-loss --schema=/app/prisma/schema.prisma 2>&1 || {
+npx prisma db push --accept-data-loss 2>&1 || {
   echo "⚠️  prisma db push failed — database may already be initialized"
 }
 
 echo "✅ Database ready"
-echo "🚀 Starting CreatorOS..."
-exec node server.js
+echo "🚀 Starting CreatorOS on port ${PORT:-3012}..."
+exec npx next start --port ${PORT:-3012}
