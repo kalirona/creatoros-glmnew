@@ -30,5 +30,6 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff|woff2|ttf|eot)$).*)',
     '/',
     '/(api|trpc)(.*)',
+    '/__clerk/:path*',
   ],
 }
