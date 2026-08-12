@@ -9,14 +9,17 @@
 FROM oven/bun:1.1 AS builder
 WORKDIR /app
 
-# Copy package files first for better caching
+# Copy package files + Prisma schema first
+# (postinstall script runs prisma generate, which needs the schema)
 COPY package.json bun.lock* ./
-
-# Install dependencies (don't use --frozen-lockfile to avoid sync issues)
-RUN bun install
-
-# Copy Prisma schema and generate client
 COPY prisma ./prisma
+
+# Install dependencies
+# --ignore-scripts skips postinstall (we run prisma generate explicitly below)
+# to avoid race conditions with schema not being available
+RUN bun install --ignore-scripts
+
+# Generate Prisma client (now schema is available)
 RUN bunx prisma generate
 
 # Copy all source files
