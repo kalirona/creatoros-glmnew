@@ -78,7 +78,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 # Copy Prisma client files (not included in standalone by default)
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+
+# Copy entrypoint script
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 # Create data directory for SQLite with correct ownership
 RUN mkdir -p /app/db && chown nextjs:nodejs /app/db
@@ -92,5 +97,5 @@ EXPOSE 3012
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3012/api/ai/features || exit 1
 
-# Start the standalone server (Node.js, not Bun — for production stability)
-CMD ["node", "server.js"]
+# Start via entrypoint (initializes DB schema, then starts server)
+CMD ["./docker-entrypoint.sh"]
