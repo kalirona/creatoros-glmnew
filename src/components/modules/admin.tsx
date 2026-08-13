@@ -493,6 +493,33 @@ export function LoadingBlock() {
   return <Skeleton className="h-96 rounded-xl" />
 }
 
+/**
+ * ErrorBlock — shown when an API call fails (e.g., 403 Forbidden).
+ * Helps users understand why a panel is empty instead of showing infinite loading.
+ */
+export function ErrorBlock({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+  return (
+    <Card className="border-destructive/30">
+      <CardContent className="p-8 text-center space-y-3">
+        <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-full bg-destructive/10">
+          <AlertCircle className="h-6 w-6 text-destructive" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">{message || 'Failed to load data'}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            If you&apos;re seeing this repeatedly, your account may not have Super Admin access.
+          </p>
+        </div>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Retry
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 async function mutate(
   url: string, method: 'PUT' | 'POST' | 'PATCH' | 'DELETE',
   body?: unknown, okMessage?: string, silent = false,
@@ -601,9 +628,10 @@ export function AdminModule() {
  * ========================================================================== */
 
 export function DashboardPanel({ onJump }: { onJump: (t: string) => void }) {
-  const { data: mon, loading: l1 } = useApi<MonitoringData>('/api/admin/monitoring')
+  const { data: mon, loading: l1, error: e1, refetch: r1 } = useApi<MonitoringData>('/api/admin/monitoring')
   const { data: logs, loading: l2 } = useApi<{ logs: LogRow[] }>('/api/admin/logs?page=1&pageSize=5')
 
+  if (e1) return <ErrorBlock message={e1} onRetry={r1} />
   if (l1 || !mon) return <LoadingBlock />
 
   const quickLinks = [
@@ -834,7 +862,7 @@ function CapIconBadges({ model }: { model: ProviderModel }) {
 }
 
 export function ProvidersPanel() {
-  const { data, loading, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
+  const { data, loading, error, refetch } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [showKey, setShowKey] = useState<Record<string, boolean>>({})
   const [modelsDialog, setModelsDialog] = useState<{ open: boolean; provider?: Provider }>({ open: false })
   const [testConn, setTestConn] = useState<{
@@ -848,6 +876,7 @@ export function ProvidersPanel() {
   const [newKeys, setNewKeys] = useState<Record<string, string>>({})
   const [syncingId, setSyncingId] = useState<string | null>(null)
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   const toggleActive = async (p: Provider, v: boolean) => {
@@ -1670,7 +1699,7 @@ function UsageDialog({
   provider?: Provider
   onClose: () => void
 }) {
-  const { data, loading } = useApi<ProviderUsage>(open && provider ? `/api/admin/providers/${provider.id}/usage` : null)
+  const { data, loading, error } = useApi<ProviderUsage>(open && provider ? `/api/admin/providers/${provider.id}/usage` : null)
 
   if (!provider) return null
 
@@ -2873,7 +2902,7 @@ export function ModelsPanel() {
 // ============================================================================
 
 function ApprovedModelsPanel() {
-  const { data, loading, refetch } = useApi<{ models: any[] }>('/api/admin/approved-models')
+  const { data, loading, error, refetch } = useApi<{ models: any[] }>('/api/admin/approved-models')
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [showDisabled, setShowDisabled] = useState(false)
 
@@ -2891,6 +2920,7 @@ function ApprovedModelsPanel() {
     if (ok.ok) refetch()
   }
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   // Split models into enabled and disabled
@@ -3110,7 +3140,7 @@ function ProviderCatalogPanel() {
     return `/api/admin/models${q ? `?${q}` : ''}`
   }, [providerFilter, modalityFilter])
 
-  const { data, loading, refetch } = useApi<{ models: any[] }>(query)
+  const { data, loading, error, refetch } = useApi<{ models: any[] }>(query)
   const { data: approvedData, refetch: refetchApproved } = useApi<{ models: any[] }>('/api/admin/approved-models')
   const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
 
@@ -3158,6 +3188,7 @@ function ProviderCatalogPanel() {
     refetch()
   }
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   return (
@@ -3430,7 +3461,7 @@ function AddModelDialog({
  * ========================================================================== */
 
 export function RoutingPanel() {
-  const { data: routeData, loading: l1, refetch } = useApi<{ routes: RouteRow[] }>('/api/admin/routing')
+  const { data: routeData, loading: l1, error, refetch } = useApi<{ routes: RouteRow[] }>('/api/admin/routing')
   const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
   const [drafts, setDrafts] = useState<Record<string, { providerId: string; fallbackProviderId: string; strategy: string; isActive: boolean }>>({})
   const [saving, setSaving] = useState<string | null>(null)
@@ -3444,6 +3475,7 @@ export function RoutingPanel() {
     return m
   }, [routeData])
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (l1 || !routeData) return <LoadingBlock />
 
   const getDraft = (cat: string, r: RouteRow | undefined) => {
@@ -3562,7 +3594,8 @@ export function RoutingPanel() {
  * ========================================================================== */
 
 export function CreditsPanel() {
-  const { data, loading } = useApi<CreditsData>('/api/admin/credits')
+  const { data, loading, error, refetch } = useApi<CreditsData>('/api/admin/credits')
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   const { summary, recent } = data
@@ -3627,11 +3660,12 @@ function Wallet({ className }: { className?: string }) {
  * ========================================================================== */
 
 export function StoragePanel() {
-  const { data, loading, refetch } = useApi<StorageData>('/api/admin/storage')
+  const { data, loading, error, refetch } = useApi<StorageData>('/api/admin/storage')
   const [editing, setEditing] = useState<StorageWorkspace | null>(null)
   const [newQuota, setNewQuota] = useState('10')
   const [saving, setSaving] = useState(false)
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   const submitQuota = async () => {
@@ -3787,13 +3821,14 @@ export function JobsPanel() {
     if (statusFilter !== 'all') params.set('status', statusFilter)
     return `/api/admin/jobs?${params.toString()}`
   }, [page, statusFilter])
-  const { data, loading, refetch } = useApi<{ jobs: JobRow[]; total: number; totalPages: number; stats: JobStats }>(query, [page, statusFilter])
+  const { data, loading, error, refetch } = useApi<{ jobs: JobRow[]; total: number; totalPages: number; stats: JobStats }>(query, [page, statusFilter])
 
   const cancelJob = async (j: JobRow) => {
     const ok = await mutate(`/api/admin/jobs/${j.id}`, 'PATCH', { status: 'CANCELLED', errorMessage: 'Cancelled by admin' }, `Job ${j.id.slice(-6)} cancelled`)
     if (ok.ok) refetch()
   }
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   return (
@@ -3975,7 +4010,7 @@ export function JobsPanel() {
  * ========================================================================== */
 
 export function MonitoringPanel() {
-  const { data, loading, refetch } = useApi<MonitoringData>('/api/admin/monitoring')
+  const { data, loading, error, refetch } = useApi<MonitoringData>('/api/admin/monitoring')
   const [autoRefresh, setAutoRefresh] = useState(false)
 
   useEffect(() => {
@@ -3984,6 +4019,7 @@ export function MonitoringPanel() {
     return () => clearInterval(id)
   }, [autoRefresh, refetch])
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   return (
@@ -4139,7 +4175,7 @@ export function LogsPanel() {
   }, [page, filters])
 
   const { data: provData } = useApi<{ providers: Provider[] }>('/api/admin/providers')
-  const { data, loading } = useApi<{ logs: LogRow[]; total: number; totalPages: number }>(query, [page, filters])
+  const { data, loading, error } = useApi<{ logs: LogRow[]; total: number; totalPages: number }>(query, [page, filters])
 
   const update = (k: keyof typeof filters, v: string) => {
     setFilters((f) => ({ ...f, [k]: v }))
@@ -4268,7 +4304,8 @@ export function LogsPanel() {
  * ========================================================================== */
 
 export function CostsPanel() {
-  const { data, loading, refetch } = useApi<CostData>('/api/admin/costs')
+  const { data, loading, error, refetch } = useApi<CostData>('/api/admin/costs')
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   const maxDaily = Math.max(...data.dailySeries.map((d) => d.totalCostUsd), 1)
@@ -4438,7 +4475,7 @@ export function CostsPanel() {
  * ========================================================================== */
 
 export function SecurityPanel() {
-  const { data, loading, refetch } = useApi<SecurityData>('/api/admin/security')
+  const { data, loading, error, refetch } = useApi<SecurityData>('/api/admin/security')
   const [rateForm, setRateForm] = useState({ minute: 60, hour: 600 })
   const [saving, setSaving] = useState(false)
 
@@ -4452,6 +4489,7 @@ export function SecurityPanel() {
     }
   }, [data])
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   const saveRateLimits = async () => {
@@ -4588,8 +4626,9 @@ export function SecurityPanel() {
  * ========================================================================== */
 
 export function FlagsPanel() {
-  const { data, loading, refetch } = useApi<{ flags: Flag[] }>('/api/admin/flags')
+  const { data, loading, error, refetch } = useApi<{ flags: Flag[] }>('/api/admin/flags')
 
+  if (error) return <ErrorBlock message={error} onRetry={refetch} />
   if (loading || !data) return <LoadingBlock />
 
   return (

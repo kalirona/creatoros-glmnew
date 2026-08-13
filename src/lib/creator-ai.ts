@@ -15,6 +15,13 @@ import { NextResponse } from 'next/server'
 export const DEMO_WORKSPACE_ID = 'default'
 
 export async function getDemoUser() {
+  // Prefer a SUPER_ADMIN user (so admin pages work on fresh installs),
+  // otherwise fall back to the first user by creation date.
+  const admin = await db.user.findFirst({
+    where: { role: 'SUPER_ADMIN' },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (admin) return admin
   return db.user.findFirst({ orderBy: { createdAt: 'asc' } })
 }
 
