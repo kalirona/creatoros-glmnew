@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import type { ModuleId } from '@/lib/nav'
+import { SignInButton, SignUpButton, UserButton } from '@clerk/nextjs'
 
 export function Topbar() {
   const { setCommandOpen, theme, toggleTheme, activeModule, setActiveModule, triggerCreateDialog } = useAppStore()
@@ -105,6 +106,23 @@ export function Topbar() {
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {/* Clerk Auth Controls */}
+      <div className="flex items-center gap-2">
+        {/* Signed out: show sign-in + sign-up buttons */}
+        <div className="hidden sm:flex items-center gap-1.5 [&_.clerk-button]:!h-8 [&_.clerk-button]:!text-xs">
+          <SignInButton mode="modal">
+            <Button variant="ghost" size="sm" className="h-8 text-xs">Sign in</Button>
+          </SignInButton>
+          <SignUpButton mode="modal">
+            <Button size="sm" className="h-8 text-xs">Sign up</Button>
+          </SignUpButton>
+        </div>
+        {/* Signed in: show user button (avatar + dropdown) */}
+        <div className="[&>div]:!h-8 [&>div]:!w-8">
+          <UserButton />
+        </div>
+      </div>
     </header>
   )
 }
