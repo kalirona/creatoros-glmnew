@@ -1,0 +1,18 @@
+# Docker ignore — exclude files not needed in the build context
+node_modules
+.next
+.git
+.gitignore
+db
+*.log
+.env*
+!.env.example
+docs
+README.md
+*.md
+.DS_Store
+.vscode
+.idea
+coverage
+.nyc_output
+dist

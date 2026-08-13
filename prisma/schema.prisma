@@ -1,6 +1,7 @@
 // CreatorOS — Multi-tenant creator platform schema
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
 }
 
 datasource db {
@@ -16,6 +17,16 @@ model User {
   bio           String?
   role          String   @default("MEMBER") // Global account role: SUPER_ADMIN|MEMBER (workspace roles are on WorkspaceMember)
   credits       Int      @default(500)
+  // ─── Clerk migration fields (Phase A — nullable, no data loss) ──────────
+  // clerkId links a CreatorOS User to a Clerk user. CreatorOS User.id remains
+  // the internal primary key used by all foreign keys. Clerk's user ID must
+  // NEVER replace User.id. Nullable during migration — populated when a user
+  // signs in via Clerk for the first time.
+  clerkId           String? @unique
+  // activeWorkspaceId supports future workspace switching. Do NOT implement
+  // workspace switching yet. Do NOT change DEMO_WORKSPACE_ID. Nullable so
+  // existing users are unaffected.
+  activeWorkspaceId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
