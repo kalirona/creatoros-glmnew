@@ -2208,3 +2208,37 @@ Notes:
 - ✓ All 10 `if (loading || !data)` full-return guards in `admin.tsx` are paired with prior `if (error) return <ErrorBlock>` checks.
 - ✓ No `href="#"` / `href=""` dead links anywhere in src/.
 
+
+---
+Task ID: PHASE-0-AUDIT
+Agent: subagent (general-purpose, read-only)
+Task: Complete production audit of CreatorOS Next.js project — 12 areas
+
+Work Log:
+- Read worklog.md (2210 lines) for prior context including PHASE-B/C Clerk migration notes.
+- Audited authentication patterns across entire src/ directory:
+  - getDemoUser: 14 callers (12 in src/app/api/ai/*, 1 in src/app/api/n8n/health, 1 internal in creator-ai.ts)
+  - requireSuperAdmin: 31 caller files in src/app/api/admin/**
+  - getCurrentUser: 1 caller (src/app/api/auth/me) — the only real Clerk-gated route
+  - auth() / clerkMiddleware / ClerkProvider: present, but proxy.ts is passthrough only (no auth.protect())
+  - next-auth: 0 imports in src/, but 1 entry in package.json (^4.24.11) — ORPHANED dependency
+  - getContext() in src/lib/community.ts: 32 callers in /api/community/** — also demo-mode (returns first workspace + first member)
+- Audited Clerk integration: package.json declares @clerk/nextjs ^7.7.4 + @clerk/ui ^1.30.1. ClerkProvider is inside <body> in layout.tsx (correct). .env contains ONLY DATABASE_URL — no Clerk publishable/secret keys → app runs in demo mode (per .env.example).
+- Audited sidebar/routing: 20 ModuleIds declared in nav.ts; all 20 mapped in page.tsx MODULES map; all 20 component files exist in src/components/modules/. 7 ModuleIds intentionally hidden from sidebar (membership, email, affiliates, analytics, admin, certificates, automation) but reachable via direct navigation.
+- Audited buttons/actions: 2 empty onClick handlers in editor/navigator-panel.tsx; 0 dead href="#"/"" links; 5 "Coming Soon" text instances (support.tsx x4, courses.tsx toast x1); 0 actual TODO/FIXME comments in src/ (the only TODO-like matches are placeholder strings like "CREOS-ENT-XXXX-XXXX").
+- Audited loading/error patterns: 24 `if (loading || !data)` guards across modules — most lack explicit error checks (only community.tsx:178, email.tsx:53, admin.tsx:10 guards pair with prior `if (error) return`). 2 silent `.catch(() => {})` swallows in ai-studio.tsx (lines 313, 2081). LogsPanel (admin.tsx:4239) destructures error but doesn't render it. Prior-worklog bugs #7 (UsageDialog infinite loading, admin.tsx:1720) and #8 (ApiKeysPanel.loadingKeys, admin.tsx:2703) are now FIXED — both have proper error/catch handling.
+- Audited API security: 107 total route files. 31 use requireSuperAdmin (admin/**). 12 use getDemoUser (ai/** + n8n/health). 1 uses getCurrentUser (auth/me). 64 use NEITHER — including all 17 /api/data/** routes (no auth at all), all 32 /api/community/** routes (use getContext() which is demo-mode), all 3 /api/support/** routes, and 12 /api/ai/** routes (assets, brand-profile, features, generations, images/[id], projects/[id], publish-course, videos/[id]). Server-side authorization is effectively disabled across the entire read API.
+- Audited dead code: next-auth orphaned (0 imports, declared in package.json). next-intl ^4.3.4 also orphaned (0 imports). Stub adapters in providers.ts (OpenRouter, FalAi, ElevenLabs, Deepgram, OpenAIEmbeddings) all throw "requires a real API key" — intentionally placeholders for unprovisioned providers.
+- Audited Directus: 0 matches anywhere in repo. Not installed, not configured, not used.
+- Audited landing page: src/components/landing-page.tsx exists. src/app/page.tsx imports useUser from Clerk and conditionally renders <LandingPage /> when !isSignedIn (line 89). However, without NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY in .env, Clerk's useUser() behavior is undefined — isLoaded may never flip true (risk of indefinite spinner at page.tsx:81-87). Both topbar.tsx and landing-page.tsx use SignInButton/SignUpButton mode="modal" WITHOUT asChild prop → nested <button> HTML bug.
+- Audited environment: .env has only 1 var (DATABASE_URL). docker-compose.yml forwards 13 env vars (all Clerk + N8N + DATABASE_URL + NODE_ENV + PORT). process.env references in src/ are limited to: DATABASE_URL (implicit via Prisma), NODE_ENV (db.ts), N8N_* (5 vars in n8n/config.ts + feature-flag.ts). Zero NEXT_PUBLIC_* references in src/ — Clerk SDK auto-loads NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY via Next.js build-time inlining.
+- Audited build/deployment: Dockerfile is 3-stage (bun deps → node builder → node runner). PORT=3012. Healthcheck hits /api/ai/features. docker-entrypoint.sh runs `prisma db push --accept-data-loss` then seeds a default SUPER_ADMIN user (admin@creatoros.local, no password). next.config.ts has `typescript.ignoreBuildErrors: true` (dangerous — type errors silently ship to production). NO `output: 'standalone'` despite package.json `start` script referencing `.next/standalone/server.js` — only `next start` in entrypoint is functional. prisma/schema.prisma has binaryTargets for native + debian-openssl-3.0.x + debian-openssl-1.1.x (covers Docker debian-openssl-3.0.x target). 3 identical docker-compose files (docker-compose.yml, compose.yml, docker-compose.yaml) — no drift but redundant.
+
+Findings Summary (see final report for full classification):
+- 3 critical blockers (auth security, env, build config)
+- 5 high-priority issues
+- 7 medium issues
+- 6 low-priority cleanups
+- 4 dead-code candidates
+
+Status: COMPLETE — no code modified. Read-only audit delivered.
