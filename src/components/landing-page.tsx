@@ -1,7 +1,6 @@
 'use client'
 
 import Link from 'next/link'
-import { SignInButton, SignUpButton } from '@clerk/nextjs'
 import { Sparkles, GraduationCap, Users, Package, Globe, MessageCircle, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -19,12 +18,8 @@ export function LandingPage() {
             <span className="font-bold text-lg">CreatorOS</span>
           </div>
           <div className="flex items-center gap-2">
-            <SignInButton mode="modal">
-              <Button variant="ghost" size="sm">Sign in</Button>
-            </SignInButton>
-            <SignUpButton mode="modal">
-              <Button size="sm">Get Started</Button>
-            </SignUpButton>
+            <Link href="/sign-in"><Button variant="ghost" size="sm">Sign in</Button></Link>
+            <Link href="/sign-up"><Button size="sm">Get Started</Button></Link>
           </div>
         </div>
       </header>
@@ -43,12 +38,8 @@ export function LandingPage() {
           Everything you need in one platform.
         </p>
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-          <SignUpButton mode="modal">
-            <Button size="lg" className="w-full sm:w-auto">Start Free <Sparkles className="h-4 w-4 ml-2" /></Button>
-          </SignUpButton>
-          <SignInButton mode="modal">
-            <Button size="lg" variant="outline" className="w-full sm:w-auto">Sign in</Button>
-          </SignInButton>
+          <Link href="/sign-up"><Button size="lg" className="w-full sm:w-auto">Start Free <Sparkles className="h-4 w-4 ml-2" /></Button></Link>
+          <Link href="/sign-in"><Button size="lg" variant="outline" className="w-full sm:w-auto">Sign in</Button></Link>
         </div>
       </section>
 
@@ -111,9 +102,7 @@ export function LandingPage() {
         <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
           Join CreatorOS and get access to all the tools you need to run your creator business.
         </p>
-        <SignUpButton mode="modal">
-          <Button size="lg">Get Started Free <Sparkles className="h-4 w-4 ml-2" /></Button>
-        </SignUpButton>
+        <Link href="/sign-up"><Button size="lg">Get Started Free <Sparkles className="h-4 w-4 ml-2" /></Button></Link>
       </section>
 
       {/* Footer */}

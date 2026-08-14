@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
 import type { ModuleId } from '@/lib/nav'
-import { SignInButton, SignUpButton, UserButton, useUser } from '@clerk/nextjs'
+import { useUser, UserButton } from '@clerk/nextjs'
+import Link from 'next/link'
 
 export function Topbar() {
   const { setCommandOpen, theme, toggleTheme, activeModule, setActiveModule, triggerCreateDialog } = useAppStore()
@@ -118,12 +119,12 @@ export function Topbar() {
         ) : (
           /* Signed out: show sign-in + sign-up buttons */
           <>
-            <SignInButton mode="modal">
+            <Link href="/sign-in">
               <Button variant="ghost" size="sm" className="h-8 text-xs">Sign in</Button>
-            </SignInButton>
-            <SignUpButton mode="modal">
+            </Link>
+            <Link href="/sign-up">
               <Button size="sm" className="h-8 text-xs">Sign up</Button>
-            </SignUpButton>
+            </Link>
           </>
         )}
       </div>
