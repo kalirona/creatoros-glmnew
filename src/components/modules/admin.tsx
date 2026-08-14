@@ -1717,7 +1717,12 @@ function UsageDialog({
         </DialogHeader>
 
         <div className="py-2 space-y-4">
-          {loading || !data ? (
+          {error ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2 text-destructive" />
+              Failed to load usage data.
+            </div>
+          ) : loading || !data ? (
             <div className="space-y-2">
               <Skeleton className="h-20 rounded-lg" />
               <Skeleton className="h-20 rounded-lg" />
@@ -2694,6 +2699,10 @@ export function ApiKeysPanel() {
     ).then((results) => {
       if (!active) return
       setKeys(results.flat())
+      setLoadingKeys(false)
+    }).catch(() => {
+      if (!active) return
+      setKeys([])
       setLoadingKeys(false)
     })
     return () => { active = false }

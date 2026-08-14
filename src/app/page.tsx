@@ -8,6 +8,8 @@ import { CommandPalette } from '@/components/app/command-palette'
 import { RbacGuard } from '@/components/app/rbac-guard'
 import { useAppStore } from '@/store/app-store'
 import { DashboardModule } from '@/components/modules/dashboard'
+import { LandingPage } from '@/components/landing-page'
+import { useUser } from '@clerk/nextjs'
 import type { ModuleId } from '@/lib/nav'
 
 // Lazy-load all modules EXCEPT dashboard (which is the default landing page).
@@ -70,8 +72,25 @@ function Skeleton() {
 }
 
 export default function Home() {
+  const { isSignedIn, isLoaded } = useUser()
   const activeModule = useAppStore((s) => s.activeModule)
   const builderCourseId = useAppStore((s) => s.builderCourseId)
+
+  // Show landing page for unauthenticated users
+  // isLoaded=false means Clerk is still initializing — show a brief loading state
+  if (!isLoaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!isSignedIn) {
+    return <LandingPage />
+  }
+
+  // Authenticated: show the full application
   const Active = MODULES[activeModule] ?? DashboardModule
   const isPlatformModule = PLATFORM_MODULES.includes(activeModule)
 

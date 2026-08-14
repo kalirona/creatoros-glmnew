@@ -2098,3 +2098,113 @@ Stage Summary:
 - Super Admin access preserved (AI Settings + System Settings with all sub-tabs)
 - RBAC guard intact (non-super-admins get 403 page on platform modules)
 - Files changed: src/lib/nav.ts, src/components/app/topbar.tsx, src/components/app/command-palette.tsx
+
+---
+
+## Task ID: PHASE-D0.5-AUDIT
+**Agent:** Explore (read-only audit)
+**Task:** Audit routing, middleware, auth, nav — report findings only (NO code changes)
+
+### 1. Middleware / Proxy
+- **`src/middleware.ts`** — DOES NOT EXIST (confirmed via Glob, no matches). ✓ No conflict.
+- **`src/proxy.ts`** — EXISTS, is the active Clerk middleware for Next.js 16 (lines 1–35).
+  - Uses `clerkMiddleware(async () => { /* no auth.protect() */ })` — passthrough only.
+  - Matcher covers all routes except static assets / Next internals / `__clerk/*`.
+  - Comment (line 12) confirms: *"Until then, getDemoUser() remains the active authentication mechanism."*
+- **Verdict:** No conflict. `proxy.ts` is active. `middleware.ts` correctly removed (Next.js 16 deprecated it).
+
+### 2. Clerk Sign-In / Sign-Up buttons (`src/components/app/topbar.tsx`)
+- Lines 113–120:
+  ```
+  <SignInButton mode="modal"><Button variant="ghost" size="sm">Sign in</Button></SignInButton>
+  <SignUpButton mode="modal"><Button size="sm">Sign up</Button></SignUpButton>
+  ```
+- **BUG #1 — Nested `<button>` (invalid HTML):** `SignInButton` / `SignUpButton` are Clerk components that render their own `<button>` wrapper. Wrapping a shadcn `<Button>` (also a `<button>`) inside them produces `<button><button>Sign in</button></button>`. There is **NO `asChild` prop** on either Clerk component (only on `DropdownMenuTrigger` at lines 49 & 83). Fix: `<SignInButton mode="modal" asChild><Button>...</Button></SignInButton>`.
+- **BUG #2 — Modal cannot open without API keys:** `.env` contains ONLY `DATABASE_URL=file:/home/z/my-project/db/custom.db`. There is NO `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and NO `CLERK_SECRET_KEY`. Without a publishable key, `ClerkProvider` (layout.tsx:34) cannot initialize the frontend SDK, so `mode="modal"` clicks either throw or no-op. `.env.example` (line 18) confirms these keys are required: *"Without these, the app runs in demo mode."*
+- **UX issue:** Buttons are inside `<div className="hidden sm:flex ...">` (line 113) → invisible on mobile (< 640px). No mobile sign-in affordance exists.
+- **CSS selector mismatch:** The wrapper uses `[&_.clerk-button]:!h-8 [&_.clerk-button]:!text-xs` — but Clerk's `SignInButton` / `SignUpButton` do NOT emit a `clerk-button` class; they emit `clerk-<component>` classes. The selector matches nothing.
+- **No nesting/CSS blocker for modal:** `header` is `z-20`; Clerk modal portals to `<body>` with high z-index. Once API keys are added, modal would render above header correctly.
+- **`UserButton`** (line 123) — wraps in `<div className="[&>div]:!h-8 [&>div]:!w-8">`. Also will not render without publishable key.
+
+### 3. Navigation audit (`src/lib/nav.ts` ↔ `src/app/page.tsx` MODULES map)
+**ModuleIds declared in `nav.ts:22-27` (20 total):**
+`dashboard, courses, community, store, products, membership, email, crm, affiliates, analytics, ai-studio, pages-funnels, support, settings, admin, certificates, media-library, automation, ai-settings, system-settings`
+
+**MODULES map entries in `page.tsx:36-57` (20 total):** All 20 ModuleIds present. ✓ **No missing entries.**
+
+Notes:
+- `'admin'` (page.tsx:51) maps to `AiSettingsModule` with comment *"backward compat: old 'admin' route → AI Settings"*. No nav entry points to it, but the shim exists. Not a bug.
+- `PLATFORM_MODULES` is duplicated: `nav.ts:194` (`['ai-settings', 'system-settings', 'admin']`) AND `page.tsx:60` (same list). The page.tsx copy is used by the `<RbacGuard>` wrapper at line 99. Minor drift risk, not a bug.
+- Sidebar visible items (`NAV_GROUPS`, nav.ts:56-141) only surface ~11 ModuleIds; the remaining 9 (`email, membership, affiliates, analytics, certificates, automation, ai-settings, system-settings, admin`) are reachable via direct moduleId navigation, command palette, or hidden routes. Intentional per nav.ts comments.
+
+### 4. Landing page (`src/app/page.tsx`)
+- **Client component:** YES (`'use client'`, line 1).
+- **Auth state check:** **NONE.** Zero `useAuth`, `useUser`, `SignedIn`, `SignedOut`, `isSignedIn` imports/usages anywhere in `src/` (confirmed via grep — 0 matches across entire src tree).
+- **What unauthenticated users see:** The full CreatorOS dashboard — `<Sidebar>`, `<Topbar>` (with non-functional Clerk Sign In/Sign Up buttons + `<UserButton>`), and the active module (defaults to `dashboard` via app-store.ts:40). `<RbacGuard>` wraps platform modules, but `userRole` defaults to `'SUPER_ADMIN'` in the Zustand store (`app-store.ts:63`, with comment *"sandbox defaults to SUPER_ADMIN so the admin pages are visible"*), so anonymous visitors can access **admin pages** (AI Settings + System Settings) without authentication.
+- **`<CourseBuilder>` override** (page.tsx:79) takes priority over dashboard layout when `builderCourseId` is set — bypasses `<Topbar>`/`<Sidebar>` entirely.
+
+### 5. Dead code / risk search
+| Pattern | Count | Locations |
+|---|---|---|
+| `next-auth` imports in src/ | **0** | None. Not used anywhere in src/. |
+| `next-auth` in package.json | **1** | `package.json:64` — `"next-auth": "^4.24.11"`. **ORPHANED dependency.** Safe to remove. |
+| `NextAuth` / `getServerSession` / `useSession` | **0** | None. |
+| `getDemoUser()` calls | **13** callers + 1 def + 1 internal use | Defined in `src/lib/creator-ai.ts:17`. Internal call at `creator-ai.ts:52` (inside `requireSuperAdmin`). Called from: `api/ai/{images, images/[id]/actions, projects (×2), dashboard, history, chat, landing-page, generate, videos, videos/[id]/retry, section-rewrite, n8n/health}/route.ts`. Plus 1 comment in `proxy.ts:12`. |
+| `getCurrentUser()` calls | **1** caller + 1 def | Defined in `src/lib/auth.ts:87`. Called only from `src/app/api/auth/me/route.ts:28`. |
+| `requireSuperAdmin()` calls | **~47** call sites + 1 def | Defined in `src/lib/creator-ai.ts:51`. Called from nearly every `src/app/api/admin/**/route.ts` (50+ files) — flags, system-metrics, credits, ai-features (×2), settings, monitoring, tools, security (×2), models (×3), logs, approved-models (×4), jobs (×3), prompts (×4), providers (×3), providers/[id]/* (many), routing (×3), routing/defaults (×2), routing/failover (×2), storage (×2), costs, generations. |
+| `onClick={() => {}}` empty handlers | **2** | `src/components/editor/navigator-panel.tsx:85,86` — "Collapse all" / "Expand all" `IconBtn` handlers are no-ops. |
+| `href="#"` / `href=""` | **0** | None. ✓ |
+| "Coming Soon" text | **4** in support.tsx + 1 variant in courses.tsx | `src/components/modules/support.tsx:113,131,138,143` (Help center + Live Chat — Coming Soon); `src/components/modules/courses.tsx:464` (toast: *"Section builder coming soon"*). |
+| `src/middleware.ts` file | **0** | None. ✓ (Should only have `src/proxy.ts` — confirmed.) |
+
+**Security finding — `requireSuperAdmin()` does NOT actually authenticate:**
+`src/lib/creator-ai.ts:51-60` — `requireSuperAdmin()` calls `getDemoUser()` which fetches the first `SUPER_ADMIN` user from the DB and returns it. **There is no Clerk session check.** Any anonymous visitor hitting `/api/admin/**` is treated as the demo super-admin. This is the "demo mode" mentioned in `.env.example:17`. Phase D must migrate these to use `getCurrentUser()` (which DOES check Clerk session).
+
+### 6. Infinite loading audit
+**`src/components/modules/admin.tsx` (4674 lines):**
+
+| Pattern type | Line(s) | Error check? | Status |
+|---|---|---|---|
+| `if (loading || !data) return <LoadingBlock />` (full-return guard) | 880, 2924, 3192, 3599, 3669, 3832, 4023, 4309, 4493, 4632 | ✅ Each is preceded by `if (error) return <ErrorBlock ... />` on the prior line | **SAFE** |
+| `if (l1 || !mon) return <LoadingBlock />` (full-return guard, alt var names) | 635 | ✅ Preceded by `if (e1) return <ErrorBlock ... />` at line 634 | **SAFE** |
+| `{loading || !data ? <Skeleton /> : <content />}` inline ternary (UsageDialog) | **1720** | ❌ **NO error check** — `useApi` returns `error` from line 1702 but it is never read. On API failure: `loading=false, data=null` → `loading || !data` = `true` → **renders Skeleton FOREVER**. | **🚨 INFINITE LOADING** |
+| `{loading ? <skel> : !data || data.logs.length===0 ? <empty> : <content>}` inline ternary (LogsPanel) | 4230 | ❌ No error check, but ternary falls through to empty state on error | Silent failure (shows misleading "No logs match these filters." on API error) |
+| `{loadingKeys ? <skel> : keys.length===0 ? <empty> : <content>}` local state (ApiKeysPanel) | 2745 | ❌ `loadingKeys` (line 2669) is set `false` only inside `.then()` at line 2697. No `.catch()` on the `Promise.all` chain. On fetch failure, `loadingKeys` stays `true` FOREVER. | **🚨 INFINITE LOADING on any provider-key fetch failure** |
+
+**`src/components/modules/ai-studio.tsx` (2249 lines):**
+- **NO `if (loading || !data)` patterns found.** (grep returned 0 matches.)
+- Uses inline ternaries (`{loading ? <skel> : !data?.X ? <empty> : <content>}`) at lines **460, 515, 881, 1396, 1759, 1973**. On API error: `loading=false, data=null` → falls through to empty-state branch. **NOT infinite loading**, but errors are **silently swallowed** (no error message shown to user).
+- **Line 2081:** `fetch('/api/ai/brand-profile').then(...).catch(() => {})` — explicit silent error swallow. `setLoading(false)` is in `.finally()` so safe from infinite spin, but errors are invisible.
+
+### 7. Package audit
+- `package.json:64` — `"next-auth": "^4.24.11"` listed as a dependency.
+- **NOT imported anywhere in `src/`** (confirmed: zero matches for `next-auth`, `NextAuth`, `getServerSession`, `useSession`).
+- **ORPHANED** — safe to `bun remove next-auth` (saves ~30MB in node_modules and removes a stale surface area). All auth goes through `@clerk/nextjs` (^7.7.4) and `@clerk/ui` (^1.30.1) at lines 17–18 of package.json.
+
+### Summary of issues (no code modified — READ-ONLY audit)
+
+**Critical (auth/security):**
+1. `.env` has NO Clerk keys → `ClerkProvider`, `SignInButton`, `SignUpButton`, `UserButton` all fail to initialize. App is in "demo mode."
+2. `requireSuperAdmin()` (`creator-ai.ts:51`) does not check Clerk session — every `/api/admin/**` route treats anonymous visitors as the demo super-admin.
+3. `userRole` defaults to `'SUPER_ADMIN'` in `app-store.ts:63` — anonymous visitors can open AI Settings + System Settings panels client-side.
+
+**Bugs (UI):**
+4. `topbar.tsx:114-119` — `SignInButton` / `SignUpButton` missing `asChild` prop → produces nested `<button>` (invalid HTML, hydration risk, click-event quirks).
+5. `topbar.tsx:113` — Clerk buttons hidden on mobile (`hidden sm:flex`) — no mobile sign-in affordance.
+6. `topbar.tsx:113` — `[&_.clerk-button]` CSS selector matches nothing (Clerk doesn't emit `clerk-button` class).
+7. `admin.tsx:1720` — `UsageDialog` renders Skeleton forever on API error (no `error` check).
+8. `admin.tsx:2745` — `ApiKeysPanel.loadingKeys` never resets on fetch failure (missing `.catch`).
+
+**Code hygiene (low risk):**
+9. `package.json:64` — `next-auth` is an orphaned dependency (not imported anywhere).
+10. `navigator-panel.tsx:85,86` — Two no-op `onClick={() => {}}` handlers.
+11. `support.tsx:113,131,138,143` + `courses.tsx:464` — "Coming Soon" placeholders.
+12. `admin.tsx:4230` + `ai-studio.tsx:460,515,881,1396,1759,1973,2081` — Silent error swallowing (no infinite spin, but errors invisible to user).
+13. `app-store.ts:63` — `userRole` is persisted to `localStorage` (line 68 `partialize`) — a user could manually set `userRole: 'SUPER_ADMIN'` in DevTools to bypass the client-side `RbacGuard`. (Server-side `requireSuperAdmin` is the real gate, but see issue #2.)
+
+**Confirmed OK:**
+- ✓ Only `src/proxy.ts` exists; no `src/middleware.ts` conflict.
+- ✓ All 20 ModuleIds in `nav.ts` have entries in `page.tsx` MODULES map.
+- ✓ All 10 `if (loading || !data)` full-return guards in `admin.tsx` are paired with prior `if (error) return <ErrorBlock>` checks.
+- ✓ No `href="#"` / `href=""` dead links anywhere in src/.
+
