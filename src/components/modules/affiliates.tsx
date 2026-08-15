@@ -18,9 +18,10 @@ interface Data {
 }
 
 export function AffiliatesModule() {
-  const { data, loading } = useApi<Data>('/api/data/affiliates')
+  const { data, loading, error } = useApi<Data>('/api/data/affiliates')
   const [copied, setCopied] = useState<string | null>(null)
 
+  if (error) return <div className="p-8 text-center text-sm text-muted-foreground">Failed to load data. Please try again.</div>
   if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
 
   const copy = (code: string) => {

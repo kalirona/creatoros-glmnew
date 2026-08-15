@@ -29,10 +29,11 @@ const STATUS_CLS: Record<string, string> = {
 }
 
 export function CrmModule() {
-  const { data, loading } = useApi<Data>('/api/data/crm')
+  const { data, loading, error } = useApi<Data>('/api/data/crm')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Data['customers'][0] | null>(null)
 
+  if (error) return <div className="p-8 text-center text-sm text-muted-foreground">Failed to load data. Please try again.</div>
   if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
 
   const filteredCustomers = data.customers.filter((c) =>

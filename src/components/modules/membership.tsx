@@ -23,7 +23,8 @@ const PLAN_COLORS: Record<string, string> = {
 }
 
 export function MembershipModule() {
-  const { data, loading } = useApi<Data>('/api/data/membership')
+  const { data, loading, error } = useApi<Data>('/api/data/membership')
+  if (error) return <div className="p-8 text-center text-sm text-muted-foreground">Failed to load data. Please try again.</div>
   if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
 
   const kpis = [

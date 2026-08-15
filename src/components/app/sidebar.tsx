@@ -20,7 +20,7 @@ import { BuyCreditsDialog } from '@/components/app/buy-credits-dialog'
 
 export function Sidebar() {
   const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar, userRole, currentUser: user } = useAppStore()
-  const [credits, setCredits] = useState(4280)
+  const [credits, setCredits] = useState(user?.credits ?? 0)
   const [buyOpen, setBuyOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -225,7 +225,7 @@ export function Sidebar() {
               )}
             >
               <Avatar className="h-8 w-8 ring-2 ring-border shrink-0">
-                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">AR</AvatarFallback>
+                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">{(user?.name || 'U').charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               {!sidebarCollapsed && (
                 <>
@@ -241,7 +241,7 @@ export function Sidebar() {
           <DropdownMenuContent align="end" side="top" className="w-56 mb-2">
             <DropdownMenuLabel className="flex items-center gap-2.5">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">AR</AvatarFallback>
+                <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">{(user?.name || 'U').charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">{user?.name || "User"}</p>

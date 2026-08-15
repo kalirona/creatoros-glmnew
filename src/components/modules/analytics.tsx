@@ -20,8 +20,9 @@ interface Data {
 const PIE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--muted-foreground)']
 
 export function AnalyticsModule() {
-  const { data, loading } = useApi<Data>('/api/data/analytics')
+  const { data, loading, error } = useApi<Data>('/api/data/analytics')
 
+  if (error) return <div className="p-8 text-center text-sm text-muted-foreground">Failed to load data. Please try again.</div>
   if (loading || !data) return <Skeleton className="h-96 rounded-xl" />
 
   const kpis = [

@@ -29,9 +29,10 @@ interface DashData {
 const PIE_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)']
 
 export function DashboardModule() {
-  const { data, loading } = useApi<DashData>('/api/data/dashboard')
+  const { data, loading, error } = useApi<DashData>('/api/data/dashboard')
   const setActiveModule = useAppStore((s) => s.setActiveModule)
 
+  if (error) return <div className="p-8 text-center text-sm text-muted-foreground">Failed to load dashboard data. Please try again.</div>
   if (loading || !data) return <DashboardSkeleton />
 
   const kpis = [
