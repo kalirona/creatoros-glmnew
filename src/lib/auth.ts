@@ -23,7 +23,6 @@
 //         → not found: create new User from Clerk data (Case C)
 //
 // Clerk identity bridge. All API routes now use getCurrentUser().
-// migrated yet — they still use getDemoUser(). Phase D will migrate them.
 // ============================================================================
 
 import 'server-only'
