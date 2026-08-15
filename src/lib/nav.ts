@@ -2,7 +2,7 @@ import {
   LayoutDashboard, GraduationCap, Users, ShoppingBag, Package,
   UserCircle, Sparkles, LifeBuoy, Settings,
   Globe, FolderOpen, type LucideIcon,
-  Cpu, ServerCog,
+  Cpu, ServerCog, ShieldCheck,
 } from 'lucide-react'
 
 // ============================================================================
@@ -133,7 +133,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { label: 'Workspace', moduleId: 'settings', subTab: 'workspace' },
           { label: 'Team', moduleId: 'settings', subTab: 'team' },
           { label: 'Billing', moduleId: 'settings', subTab: 'billing' },
-          { label: 'Security', moduleId: 'settings', subTab: 'security' },
+          { label: 'Notifications', moduleId: 'settings', subTab: 'notifications' },
         ],
       },
     ],
@@ -147,7 +147,7 @@ export const ADMIN_NAV_GROUP: NavGroup = {
   title: 'Platform',
   items: [
     {
-      id: 'ai-settings', label: 'AI Settings', icon: Cpu, description: 'AI providers, models, routing, credits, logs', badge: 'Admin', accent: 'text-amber-500',
+      id: 'ai-settings', label: 'Super Admin', icon: ShieldCheck, description: 'AI providers, models, routing, credits, logs', badge: 'Admin', accent: 'text-amber-500',
       subItems: [
         { label: 'Overview', moduleId: 'ai-settings' },
         { label: 'Providers', moduleId: 'ai-settings', subTab: 'providers' },

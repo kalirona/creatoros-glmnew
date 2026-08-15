@@ -1,12 +1,12 @@
 'use client'
+
 import { useState, useEffect } from 'react'
-import { User, Building2, CreditCard, Users, Shield, Bell, Globe, Key, Crown, Check, Zap } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { Building2, Users, CreditCard, Bell, Crown, Globe, Zap, ExternalLink, Shield, User } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -16,23 +16,17 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 const TEAM = [
-  { name: 'Current User', email: 'user@example.com', role: 'Owner', initials: 'U', color: 'bg-primary/15 text-primary' },
-  { name: 'Jamie Chen', email: 'jamie@creatoros.io', role: 'Admin', initials: 'JC', color: 'bg-violet-500/15 text-violet-600' },
-  { name: 'Priya Patel', email: 'priya@creatoros.io', role: 'Instructor', initials: 'PP', color: 'bg-amber-500/15 text-amber-600' },
-  { name: 'Marcus Lee', email: 'marcus@creatoros.io', role: 'Moderator', initials: 'ML', color: 'bg-sky-500/15 text-sky-600' },
-  { name: 'Sofia Diaz', email: 'sofia@creatoros.io', role: 'Manager', initials: 'SD', color: 'bg-emerald-500/15 text-emerald-600' },
+  { name: 'Team Member', email: 'member@example.com', role: 'Member', initials: 'T', color: 'bg-muted text-muted-foreground' },
 ]
 
 export function SettingsModule() {
   const { theme, toggleTheme, activeSubTab, currentUser: user } = useAppStore()
-  const [twoFA, setTwoFA] = useState(true)
   const [notifEmail, setNotifEmail] = useState(true)
   const [notifPush, setNotifPush] = useState(false)
-  const [settingsTab, setSettingsTab] = useState(activeSubTab || 'profile')
+  const [settingsTab, setSettingsTab] = useState(activeSubTab || 'workspace')
 
-  // Sync with sidebar navigation
   useEffect(() => {
-    if (activeSubTab && ['profile', 'workspace', 'team', 'billing', 'security', 'notifications'].includes(activeSubTab)) {
+    if (activeSubTab && ['workspace', 'team', 'billing', 'notifications'].includes(activeSubTab)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setSettingsTab(activeSubTab)
     }
@@ -40,35 +34,33 @@ export function SettingsModule() {
 
   return (
     <div className="space-y-5">
+      {/* Clerk Account Management Card — always visible at top */}
+      <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+        <CardContent className="p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10">
+              <AvatarFallback className="bg-primary/15 text-primary text-sm font-semibold">
+                {(user?.name || 'U').charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <p className="text-sm font-semibold">{user?.name || 'User'}</p>
+              <p className="text-xs text-muted-foreground">{user?.email || ''}</p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => toast.info('Manage Account', { description: 'Opening Clerk account portal...' })}>
+            <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Manage Account
+          </Button>
+        </CardContent>
+      </Card>
+
       <Tabs value={settingsTab} onValueChange={setSettingsTab}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="profile"><User className="h-3.5 w-3.5 mr-1.5" />Profile</TabsTrigger>
           <TabsTrigger value="workspace"><Building2 className="h-3.5 w-3.5 mr-1.5" />Workspace</TabsTrigger>
           <TabsTrigger value="team"><Users className="h-3.5 w-3.5 mr-1.5" />Team</TabsTrigger>
           <TabsTrigger value="billing"><CreditCard className="h-3.5 w-3.5 mr-1.5" />Billing</TabsTrigger>
-          <TabsTrigger value="security"><Shield className="h-3.5 w-3.5 mr-1.5" />Security</TabsTrigger>
           <TabsTrigger value="notifications"><Bell className="h-3.5 w-3.5 mr-1.5" />Notifications</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="profile" className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Profile</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16"><AvatarFallback className="bg-primary/15 text-primary text-lg">{(user?.name || 'U').charAt(0).toUpperCase()}</AvatarFallback></Avatar>
-                <div><Button size="sm" variant="outline" onClick={() => toast.info('Upload avatar', { description: 'Choose an image file (JPG, PNG, GIF — max 2MB)' })}>Change avatar</Button><p className="text-xs text-muted-foreground mt-1.5">JPG, PNG or GIF. Max 2MB.</p></div>
-              </div>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>Full name</Label><Input defaultValue={user?.name ?? ''} className="mt-1.5" /></div>
-                <div><Label>Email</Label><Input defaultValue={user?.email ?? ''} className="mt-1.5" /></div>
-                <div><Label>Username</Label><Input defaultValue="" className="mt-1.5" /></div>
-                <div><Label>Timezone</Label><Select defaultValue="Asia/Manila"><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Manila">Asia/Manila (PHT)</SelectItem><SelectItem value="America/New_York">America/New_York (EST)</SelectItem><SelectItem value="Europe/London">Europe/London (GMT)</SelectItem></SelectContent></Select></div>
-              </div>
-              <div><Label>Bio</Label><Textarea defaultValue="" className="mt-1.5" rows={3} /></div>
-              <div className="flex justify-end gap-2"><Button variant="outline" size="sm">Cancel</Button><Button size="sm" onClick={() => toast.success('Profile saved')}>Save changes</Button></div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="workspace" className="space-y-4">
           <Card>
@@ -76,14 +68,10 @@ export function SettingsModule() {
             <CardContent className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <div><Label>Workspace name</Label><Input defaultValue="" placeholder="Your workspace name" className="mt-1.5" /></div>
-                <div><Label>URL slug</Label><Input defaultValue="creatoros" className="mt-1.5" /></div>
+                <div><Label>URL slug</Label><Input defaultValue="" placeholder="my-workspace" className="mt-1.5" /></div>
               </div>
               <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-3"><Globe className="h-4 w-4 text-muted-foreground" /><div><p className="text-sm font-medium">Custom domain</p><p className="text-xs text-muted-foreground">creatoros.io</p></div></div>
-                <Badge variant="secondary" className="text-emerald-600 bg-emerald-500/10">Connected</Badge>
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-3"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted"><Zap className="h-4 w-4 text-primary" /></div><div><p className="text-sm font-medium">Theme</p><p className="text-xs text-muted-foreground">Currently: {theme}</p></div></div>
+                <div className="flex items-center gap-3"><Globe className="h-4 w-4 text-muted-foreground" /><div><p className="text-sm font-medium">Theme</p><p className="text-xs text-muted-foreground">Currently: {theme}</p></div></div>
                 <Button size="sm" variant="outline" onClick={toggleTheme}>Switch to {theme === 'dark' ? 'light' : 'dark'}</Button>
               </div>
               <div className="flex justify-end"><Button size="sm" onClick={() => toast.success('Workspace saved')}>Save changes</Button></div>
@@ -127,31 +115,6 @@ export function SettingsModule() {
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div className="flex items-center gap-3"><div className="flex h-8 w-12 items-center justify-center rounded bg-muted text-[10px] text-muted-foreground font-bold">—</div><div><p className="text-sm font-medium text-muted-foreground">No payment method</p></div></div>
                 <Button size="sm" variant="outline" onClick={() => toast.info('Update payment method', { description: 'Add a new card or change your default.' })}>Update</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="security" className="space-y-4">
-          <Card>
-            <CardHeader><CardTitle className="text-base">Security</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-3"><Key className="h-4 w-4 text-muted-foreground" /><div><p className="text-sm font-medium">Two-factor authentication</p><p className="text-xs text-muted-foreground">Add an extra layer of security</p></div></div>
-                <Switch checked={twoFA} onCheckedChange={setTwoFA} />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="flex items-center gap-3"><Shield className="h-4 w-4 text-muted-foreground" /><div><p className="text-sm font-medium">Password</p><p className="text-xs text-muted-foreground">Last changed 3 months ago</p></div></div>
-                <Button size="sm" variant="outline" onClick={() => toast.info('Change password', { description: 'A secure reset link will be emailed to you.' })}>Change</Button>
-              </div>
-              <div>
-                <p className="text-sm font-semibold mb-2">Active sessions</p>
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div><p className="text-sm font-medium">This device</p><p className="text-xs text-muted-foreground">Current session</p></div>
-                    <Badge variant="secondary" className="text-emerald-600 bg-emerald-500/10">Active</Badge>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>

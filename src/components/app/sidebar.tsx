@@ -258,8 +258,8 @@ export function Sidebar() {
             <DropdownMenuItem onClick={() => navigateTo('settings', 'billing')}>
               <CreditCard className="h-4 w-4 mr-2.5" /> Billing
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigateTo('settings', 'security')}>
-              <Keyboard className="h-4 w-4 mr-2.5" /> Keyboard Shortcuts
+            <DropdownMenuItem onClick={() => navigateTo('settings')}>
+              <Settings className="h-4 w-4 mr-2.5" /> CreatorOS Settings
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigateTo('support')}>
               <HelpCircle className="h-4 w-4 mr-2.5" /> Help & Support
@@ -268,9 +268,9 @@ export function Sidebar() {
             <DropdownMenuItem
               className="text-rose-600 focus:text-rose-600 focus:bg-rose-500/10"
               onClick={() => {
-                // Sign out — in production this would call /api/auth/logout
+                // Sign out via Clerk — redirect to Clerk's sign-out endpoint
                 if (typeof window !== 'undefined') {
-                  window.location.href = '/'
+                  window.location.href = '/sign-in'
                 }
               }}
             >
