@@ -2242,3 +2242,166 @@ Findings Summary (see final report for full classification):
 - 4 dead-code candidates
 
 Status: COMPLETE — no code modified. Read-only audit delivered.
+
+---
+Task ID: PHASE-D7-AUDIT
+Agent: subagent (general-purpose, read-only)
+Task: Complete auth lifecycle audit of CreatorOS — areas A through J (no code changes)
+
+Work Log:
+- Read worklog.md (2244 lines) for prior PHASE-0/PHASE-D0.5 audit context. Confirmed prior findings: demo identity was supposed to be eliminated, Clerk foundation laid in Phase B, identity bridge in Phase C. This audit verifies the post-migration state.
+- Audited Area A (Demo Auth Elimination) — searched entire repo (excluding node_modules/.next/.git/db/) for demo patterns:
+  * `getDemoUser` — 0 matches ✓ (was 13 callers + 1 def in prior audit; fully eliminated)
+  * `DEMO_WORKSPACE_ID` — 1 match (prisma/schema.prisma:27, a comment only: "Do NOT change DEMO_WORKSPACE_ID" — the constant itself does not exist)
+  * `Alex Rivera` — 2 matches (prisma/seed.ts:19, prisma/seed-pages-funnels.ts:91 — developer-only demo data, NOT run by docker-entrypoint.sh)
+  * `alex@creatoros` — 0 matches ✓
+  * `admin@creatoros` — 0 matches ✓ (was `admin@creatoros.local` in prior audit; the docker-entrypoint SUPER_ADMIN seeding was REMOVED)
+  * `admin@creatoros.local` — 0 matches ✓ (eliminated)
+  * `userRole: 'SUPER_ADMIN'` hardcoded — 0 matches ✓ (was the app-store.ts:63 default in prior audit; now defaults to `null`)
+  * `demoUser`/`demo user`/`demo account` — 2 matches (api/ai/images/route.ts:54, api/ai/videos/route.ts:78 — STALE COMMENTS only; actual code calls `getCurrentUser()` and returns 400 on null)
+- Audited Area B (Clerk Auth):
+  * `src/app/layout.tsx` — ClerkProvider exists exactly once (line 34), inside <body> (line 31). Wraps ThemeProvider. Uses shadcn theme. ✓
+  * `src/proxy.ts` — clerkMiddleware is active (line 17). NO `auth.protect()` call (passthrough only). Comment confirms "Phase D will add route-specific protection" — but no protection has been added yet. Matcher correctly excludes static assets.
+  * `src/app/sign-in/[[...sign-in]]/page.tsx` — renders `<SignIn />` (line 16). Pure Clerk component, no custom logic. ✓
+  * `src/app/sign-up/[[...sign-up]]/page.tsx` — renders `<SignUp />` (line 16). Pure Clerk component, no custom logic. ✓
+  * `src/components/app/topbar.tsx` — uses `useUser()` (line 18), `UserButton` (line 117), `<Link href="/sign-in">` (line 122), `<Link href="/sign-up">` (line 125). Uses Link+Button pattern (NOT SignInButton/SignUpButton) — avoids nested-button bug from prior audit. ✓ But does NOT check `isLoaded` (see Area D).
+  * `src/app/page.tsx` — uses `useUser()` (line 75) with `isLoaded` check, fetches `/api/auth/me` (line 84). ✓
+  * No competing custom login systems — confirmed zero matches for `next-auth`, `NextAuth`, `getServerSession`, `useSession` in src/. Clerk is the only authentication source.
+- Audited Area C (User Resolution — src/lib/auth.ts, 230 lines):
+  * Uses Clerk `auth()` (line 89) and `currentUser()` (line 102) — ✓
+  * Resolves User by clerkId (line 117, `db.user.findUnique({ where: { clerkId } })`) — ✓
+  * Links by email when clerkId not found (lines 140-164) — ✓
+  * Never changes User.id — confirmed (only `clerkId` is updated when linking, line 160) — ✓
+  * Never overwrites role/credits — confirmed (linking only sets clerkId; creation uses Prisma defaults role=MEMBER, credits=500, lines 172-180) — ✓
+  * Handles missing email (lines 131-137, throws AuthError NO_EMAIL, statusCode 400) — ✓
+  * Handles errors (lines 101-109, catches Clerk API errors; lines 148-154, catches clerkId conflicts; lines 49-67, structured AuthError class) — ✓
+  * Idempotent: on repeated requests, Case A (lookup by clerkId) returns existing User without modification (lines 121-123) — ✓
+  * One concern: `toCurrentUser()` workspace fallback chain (lines 203-215): if user has no activeWorkspaceId AND no membership, falls back to "first workspace in DB" with literal `'default'` as final fallback. New Clerk sign-ups get attached to the first workspace's ID but have NO WorkspaceMember row — see Area E.
+- Audited Area D (Auth Loading States):
+  * Total `useUser()`/`useAuth()`/`auth()` usage in src/: 3 call sites
+    - `src/components/app/topbar.tsx:18` — `const { isSignedIn, user } = useUser()` — does NOT check `isLoaded`. Brief flash of "Sign in/Sign up" buttons possible before Clerk resolves. Minor UX issue, no infinite spinner.
+    - `src/app/page.tsx:75` — `const { isSignedIn, isLoaded } = useUser()` — DOES check `isLoaded` (lines 83, 96, 105). ✓
+    - `src/lib/auth.ts:89` — `await auth()` (server-side, no loading state concern)
+  * No infinite spinner patterns found. `page.tsx` shows `<LandingPage />` while `!isLoaded || !isSignedIn` (line 107-109) — landing page renders immediately, no spinner.
+  * Minor: `topbar.tsx:18` destructures `user` but never uses it (dead variable, lint warning).
+- Audited Area E (Sign-In/Sign-Up Flow):
+  * Unauthenticated user visits `/`: `useUser()` returns `isLoaded=true, isSignedIn=false` after Clerk init → `showDashboard = false` → renders `<LandingPage />` (page.tsx:107-108). LandingPage has `<Link href="/sign-in">` and `<Link href="/sign-up">` buttons.
+  * Authenticated user visits `/`: `showDashboard = true` → renders full dashboard (Sidebar + Topbar + active module).
+  * Sign-up creates CreatorOS User: YES — via `getCurrentUser()` in `/api/auth/me` (auth.ts:166-180, Case C creates User on first request). Triggered by `page.tsx:82-95` useEffect on sign-in.
+  * Sign-up creates workspace: NO. `getCurrentUser()` Case C creates a User with `clerkId/email/name/avatarUrl` only — does NOT create a Workspace or WorkspaceMember. The `toCurrentUser()` helper attaches the user to "first workspace in DB" (line 213) but with NO membership row. Consequence: new sign-ups can call `/api/data/*` routes (which check `getCurrentUser() != null`), but ALL `/api/community/*` routes will return 401 because `getContext()` requires a WorkspaceMember (community.ts:25-34 returns null if no membership). New users cannot use community features until an admin manually creates a WorkspaceMember row.
+  * Sign-out clears app state: YES — `page.tsx:96-100` useEffect: when `isLoaded && !isSignedIn`, calls `setUserRole(null)` and `setCurrentUser(null)`. ✓
+- Audited Area F (Redirects):
+  * `src/app/superadmin/page.tsx` (19 lines, server component):
+    - Unauthenticated: `getCurrentUser()` returns null → `NextResponse.redirect('/sign-in')` (line 11). ✓
+    - Non-SUPER_ADMIN authenticated: `user.role !== 'SUPER_ADMIN'` → `NextResponse.redirect('/')` (line 15). ✓
+    - SUPER_ADMIN authenticated: renders `<SuperAdminModule />` (line 18). ✓
+    - Redirect loop risk: NONE — `/sign-in` renders Clerk `<SignIn />` (no further redirects); `/` renders dashboard (no further redirects to /superadmin). Loop is impossible.
+    - BUG: Redirect uses `process.env.NEXT_PUBLIC_URL || 'http://localhost:3012'` (lines 11, 15). If `NEXT_PUBLIC_URL` is not set in production, redirects go to `localhost:3012` — breaking production deployment. `.env` does NOT define `NEXT_PUBLIC_URL`. Only `.env.example` defines `PORT=3000` (not NEXT_PUBLIC_URL).
+  * `src/app/page.tsx` redirect loop risk: NONE. `/` never redirects to `/sign-in` — it conditionally renders `<LandingPage />` for unauthenticated users. `/sign-in` (Clerk) redirects back to `/` after sign-in. No loop possible.
+- Audited Area G (Navigation):
+  * `src/lib/nav.ts` declares 20 ModuleIds (lines 22-27): `dashboard, courses, community, store, products, membership, email, crm, affiliates, analytics, ai-studio, pages-funnels, support, settings, admin, certificates, media-library, automation, ai-settings, system-settings`.
+  * `src/app/page.tsx` MODULES map (lines 38-59): ALL 20 ModuleIds have entries. ✓
+  * Sidebar visibility (NAV_GROUPS lines 56-141 + ADMIN_NAV_GROUP lines 146-182):
+    - HOME: `dashboard`
+    - Create: `courses, products, pages-funnels`
+    - Community: `community`
+    - Business: `crm, store`
+    - AI: `ai-studio`
+    - System: `media-library, support, settings`
+    - Platform (ADMIN_NAV_GROUP): `ai-settings, system-settings`
+  * Hidden but reachable via direct nav: `membership, email, affiliates, analytics, certificates, automation, admin`. All have MODULES map entries. ✓
+  * `'admin'` ModuleId (page.tsx:53) maps to `AiSettingsModule` with comment "backward compat: old 'admin' route → AI Settings". No nav entry points here, but the shim exists. Not a bug.
+  * No navigation item has a missing route — all 20 ModuleIds resolve to a component.
+  * Minor drift risk: `PLATFORM_MODULES` duplicated — `nav.ts:194` and `page.tsx:62` both list `['admin', 'ai-settings', 'system-settings']`. Same content, but two sources of truth.
+- Audited Area H (API Auth) — CRITICAL FINDINGS:
+  * Total API routes: 107 (find src/app/api -name "route.ts")
+  * Routes importing getCurrentUser: 40 / Routes actually CALLING getCurrentUser(): 35 → 5 routes have FAKE AUTH (import only, never call):
+    1. `src/app/api/data/affiliates/route.ts` (line 2 imports, never calls)
+    2. `src/app/api/data/analytics/route.ts` (line 2 imports, never calls)
+    3. `src/app/api/data/crm/route.ts` (line 2 imports, never calls)
+    4. `src/app/api/data/dashboard/route.ts` (line 2 imports, never calls)
+    5. `src/app/api/data/membership/route.ts` (line 2 imports, never calls)
+    All 5 directly query the DB without any auth check. ANY anonymous visitor can read full CRM data, dashboard KPIs, analytics, affiliates, and membership plans. CRITICAL SECURITY.
+  * Routes importing requireSuperAdmin: 31 / Routes actually CALLING requireSuperAdmin(): 30 → 1 route has FAKE AUTH:
+    6. `src/app/api/admin/generations/route.ts` (line 3 imports, never calls). Returns the last 50 AI generation records (id, toolSlug, title, status, creditsUsed, createdAt) to ANY anonymous visitor. CRITICAL SECURITY — exposes admin-only data.
+  * Routes calling getContext(): 36 — all 36 properly check `if (!ctx) return 401` (51 explicit null checks found across the 36 files). ✓
+  * Routes with NO auth (no import, no call): 1
+    - `src/app/api/route.ts` — root API index, returns `{ message: "Hello, world!" }`. No data exposed. ✓ (acceptable)
+  * Net effective auth coverage: 100 of 107 routes (93.5%). 6 routes have FAKE auth (import but no call). 1 route has no auth (root index, harmless).
+- Audited Area I (Client Store — src/store/app-store.ts, 77 lines):
+  * Stores `userRole: UserRole | null` (line 34). Default: `null` (line 66) — previously was `'SUPER_ADMIN'` in prior audit; now correctly defaults to null. ✓
+  * Stores `currentUser: {...} | null` (lines 37-38). Default: `null` (line 68). ✓
+  * Persisted to localStorage (line 73 partialize): `activeModule, sidebarCollapsed, theme, userRole`. Concern: `userRole` IS persisted to localStorage. A malicious user could manually set `userRole: 'SUPER_ADMIN'` in DevTools to bypass the client-side `RbacGuard`. HOWEVER: server-side `requireSuperAdmin` (creator-ai.ts:25-46) is the real gate, and it properly checks `getCurrentUser()` and `user.role === 'SUPER_ADMIN'`. The client-side bypass only shows the admin UI (which calls server APIs that enforce real auth). Acceptable risk.
+  * `currentUser` is NOT persisted (correct — fetched fresh from /api/auth/me on each load).
+  * Does it duplicate Clerk auth state? Slightly — `userRole` and `currentUser` are derived from Clerk via /api/auth/me. This is necessary for client-side RBAC checks. Not a duplication problem; this is the canonical pattern for syncing server-side identity to client.
+- Audited Area J (Additional Checks):
+  * `docker-entrypoint.sh` — does NOT create any demo users. Runs `prisma db push --accept-data-loss`, then creates a default workspace IF none exists (lines 16-32). Comment confirms: "Users are created automatically when they sign in via Clerk (getCurrentUser)". ✓ This is a significant improvement over prior audit (which said it seeded `admin@creatoros.local` SUPER_ADMIN).
+  * `next.config.ts` — `typescript.ignoreBuildErrors: false` (line 6). ✓ (was `true` in prior audit — fixed)
+  * `next.config.ts` — does NOT have `output: 'standalone'`. `package.json:8` start script references `.next/standalone/server.js` (which won't exist). But `docker-entrypoint.sh:36` uses `npx next start` — which works without standalone. Mismatch but not breaking.
+  * `package.json:64` — `next-auth: ^4.24.11` is STILL listed as a dependency. NOT imported anywhere in src/ (0 matches for `next-auth`/`NextAuth`/`getServerSession`/`useSession`). ORPHANED dependency — safe to remove (saves ~30MB).
+  * `package.json:65` — `next-intl: ^4.3.4` also orphaned (0 imports in src/).
+  * `src/middleware.ts` — DOES NOT EXIST. ✓ Only `src/proxy.ts` is the active middleware.
+  * `src/app/api/auth/me/route.ts` (63 lines) — returns correct user data:
+    - 200 with `{ id, clerkId, email, name, avatarUrl, role, credits, activeWorkspaceId }` (lines 39-48)
+    - 401 if `getCurrentUser()` returns null (line 30-35)
+    - 400/409/502 for AuthError (lines 49-55)
+    - 500 for unexpected errors (lines 57-61)
+    - Does NOT expose passwords, session tokens, or Clerk API keys. ✓
+    - Note: returns `clerkId` in the response (line 41). Not sensitive but unnecessary for client use. Minor info disclosure.
+  * `.env` — contains ONLY `DATABASE_URL`. NO Clerk publishable/secret keys. Per `.env.example:18`: "Without these, the app runs in demo mode." This means in the current sandbox, Clerk components will not initialize properly. Production deployment MUST set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. (Same finding as prior audits — env vars must be configured at deploy time.)
+
+Findings Summary:
+- ✓ Demo auth FULLY ELIMINATED — getDemoUser has 0 callers (was 13+ in prior audit). docker-entrypoint.sh no longer seeds admin@creatoros.local. app-store.ts no longer defaults userRole to SUPER_ADMIN. requireSuperAdmin now properly delegates to getCurrentUser() (creator-ai.ts:26). This is the headline success of Phase D.
+- ✓ Clerk integration is structurally sound: ClerkProvider in layout, clerkMiddleware in proxy.ts, SignIn/SignUp pages, UserButton in topbar, useUser() in page.tsx, getCurrentUser() identity bridge in auth.ts.
+- ✓ auth.ts (identity bridge) is excellent: idempotent, never overwrites role/credits, handles errors gracefully, links by email when clerkId missing, never changes User.id.
+- ✓ All 20 ModuleIds in nav.ts have MODULES map entries in page.tsx. No orphan routes.
+- ✓ All 36 getContext() routes properly null-check.
+- ✓ All 35 actually-calling-getCurrentUser routes properly null-check.
+- ✓ All 30 actually-calling-requireSuperAdmin routes properly handle the auth result.
+- ✓ next.config.ts ignoreBuildErrors is now false (was true in prior audit).
+- ✓ middleware.ts does NOT exist; only proxy.ts is active.
+
+CRITICAL ISSUES (6 routes with FAKE auth — appear to have auth but don't enforce it):
+1. `src/app/api/data/affiliates/route.ts` — imports getCurrentUser (line 2), never calls. Exposes all affiliate data to anonymous visitors.
+2. `src/app/api/data/analytics/route.ts` — imports getCurrentUser (line 2), never calls. Exposes revenue/MRR/churn analytics.
+3. `src/app/api/data/crm/route.ts` — imports getCurrentUser (line 2), never calls. Exposes customer LTV, orders, contact info.
+4. `src/app/api/data/dashboard/route.ts` — imports getCurrentUser (line 2), never calls. Exposes workspace stats, revenue, team members.
+5. `src/app/api/data/membership/route.ts` — imports getCurrentUser (line 2), never calls. Exposes membership plans and MRR.
+6. `src/app/api/admin/generations/route.ts` — imports requireSuperAdmin (line 3), never calls. Exposes last 50 AI generation records (admin-only data) to anyone.
+
+HIGH-PRIORITY ISSUES:
+7. `src/app/superadmin/page.tsx:11,15` — redirect uses `process.env.NEXT_PUBLIC_URL || 'http://localhost:3012'`. NEXT_PUBLIC_URL is NOT in .env. In production, redirects will go to localhost:3012 (broken). Use `request.nextUrl.origin` instead.
+8. Sign-up does NOT create a WorkspaceMember for new Clerk users. `getCurrentUser()` Case C (auth.ts:172-180) creates the User but no membership. `getContext()` returns null for these users → all 36 community/* routes return 401. New sign-ups cannot use community features until an admin manually creates a WorkspaceMember row. (Possibly by design for invite-only workspaces, but should be documented.)
+9. `src/components/app/topbar.tsx:18` — `useUser()` does NOT check `isLoaded`. Brief flash of "Sign in/Sign up" buttons before Clerk resolves. Minor UX issue.
+10. `userRole` persisted to localStorage (app-store.ts:73) — client-side bypass possible via DevTools. Server-side requireSuperAdmin is the real gate, but RbacGuard client-side check can be spoofed. Low real-world risk.
+
+MEDIUM ISSUES:
+11. `proxy.ts` — clerkMiddleware is passthrough only (no `auth.protect()`). Per comment: "Phase D will add route-specific protection." Phase D has not added this. All route protection is enforced at the route handler level (via getCurrentUser/requireSuperAdmin/getContext). This is acceptable but means unauthenticated users can hit any URL and only get 401 at the API layer.
+12. `.env` has only DATABASE_URL — no Clerk keys. App cannot authenticate users in current sandbox. Production MUST set NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY.
+13. `package.json:64` — `next-auth: ^4.24.11` orphaned (0 imports in src/). Safe to remove.
+14. `package.json:65` — `next-intl: ^4.3.4` orphaned (0 imports in src/). Safe to remove.
+15. `src/components/app/topbar.tsx:18` — destructures `user` from useUser() but never uses it (dead variable).
+16. `/api/auth/me/route.ts:41` — returns `clerkId` in response body. Not sensitive but unnecessary for client use.
+
+LOW-PRIORITY CLEANUPS:
+17. Stale comments: `api/ai/images/route.ts:54` and `api/ai/videos/route.ts:78` say "Demo user" but actual code uses getCurrentUser(). Update comments.
+18. `prisma/schema.prisma:27` — comment references "DEMO_WORKSPACE_ID" constant that doesn't exist. Update comment to reflect current architecture.
+19. `prisma/seed.ts:19` — still seeds "Alex Rivera" as demo founder. seed.ts is NOT run by docker-entrypoint.sh (developer-only). Safe but stale.
+20. `PLATFORM_MODULES` duplicated in `nav.ts:194` and `page.tsx:62`. Same content, two sources of truth.
+
+VERIFIED OK:
+- ✓ Only `src/proxy.ts` exists; no `src/middleware.ts` conflict.
+- ✓ ClerkProvider appears exactly once (layout.tsx:34), inside <body>.
+- ✓ All 20 ModuleIds in nav.ts have MODULES map entries.
+- ✓ auth.ts identity bridge is fully idempotent and never overwrites User.id/role/credits.
+- ✓ All 36 getContext() routes properly null-check (51 explicit `if (!ctx)` checks).
+- ✓ All 35 actually-calling-getCurrentUser routes properly null-check.
+- ✓ next.config.ts has `ignoreBuildErrors: false`.
+- ✓ docker-entrypoint.sh does NOT seed demo users.
+- ✓ next-auth has 0 imports in src/ (orphaned in package.json only).
+- ✓ No competing custom login systems.
+- ✓ Sign-out properly clears app state via useEffect in page.tsx.
+- ✓ No redirect loops between / and /sign-in.
+- ✓ No infinite spinner patterns.
+
+Status: COMPLETE — no code modified. Read-only audit delivered. 6 critical security issues (fake auth), 4 high-priority issues, 6 medium issues, 4 low-priority cleanups. Phase D successfully eliminated demo identity; remaining work is fixing the 6 fake-auth routes and adding workspace provisioning for new sign-ups.
