@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { getContext } from '@/lib/community'
 
@@ -6,6 +7,8 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const ctx = await getContext()
     if (!ctx) return NextResponse.json({ error: 'No workspace found' }, { status: 404 })
 
@@ -82,6 +85,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const ctx = await getContext()
     if (!ctx) return NextResponse.json({ error: 'No workspace found' }, { status: 404 })
 

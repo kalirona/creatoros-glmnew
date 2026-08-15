@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
@@ -33,6 +34,8 @@ export async function GET(req: NextRequest) {
 // POST — add a new section to a page
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { pageId, type, content, position } = body
     if (!pageId || !type) return NextResponse.json({ error: 'pageId and type required' }, { status: 400 })
@@ -49,6 +52,8 @@ export async function POST(req: NextRequest) {
 // PUT — update section content, or move/duplicate/hide
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, action, content, isHidden } = body
 
@@ -87,6 +92,8 @@ export async function PUT(req: NextRequest) {
 // DELETE a section
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
     const section = await db.pageSection.findUnique({ where: { id } })

@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
   const settings = await db.siteSetting.findMany({ orderBy: [{ category: 'asc' }, { key: 'asc' }] })
   // parse JSON values where applicable
   const parsed = settings.map((s) => {
@@ -15,6 +18,8 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, value } = body
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })

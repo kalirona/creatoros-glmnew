@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { slugify } from '@/lib/utils'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const posts = await db.blogPost.findMany({ orderBy: { createdAt: 'desc' }, take: 100 })
     return NextResponse.json({
       posts: posts.map((p) => ({ id: p.id, title: p.title, slug: p.slug, excerpt: p.excerpt, content: p.content, category: p.category, tags: p.tags.split(',').filter(Boolean), author: p.author, status: p.status, coverUrl: p.coverUrl, visits: p.visits, publishedAt: p.publishedAt, createdAt: p.createdAt })),
@@ -19,6 +22,8 @@ export async function GET() {
 // POST — create blog post
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { title, slug, excerpt, content, category, tags, status, coverUrl } = body
 
@@ -54,6 +59,8 @@ export async function POST(req: NextRequest) {
 // PUT — update blog post
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, title, slug, excerpt, content, category, tags, status, coverUrl } = body
 
@@ -86,6 +93,8 @@ export async function PUT(req: NextRequest) {
 // DELETE — delete blog post
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })

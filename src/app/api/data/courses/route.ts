@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const courses = await db.course.findMany({
       orderBy: { createdAt: 'desc' },
       include: { sections: { include: { lessons: true }, orderBy: { position: 'asc' } } },
@@ -29,6 +32,8 @@ export async function GET() {
 // POST — create course
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { title, description, category, level, price } = body
 
@@ -59,6 +64,8 @@ export async function POST(req: NextRequest) {
 // PUT — update course
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, title, description, category, level, price, status, thumbnailUrl } = body
 
@@ -86,6 +93,8 @@ export async function PUT(req: NextRequest) {
 // DELETE — delete course
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })

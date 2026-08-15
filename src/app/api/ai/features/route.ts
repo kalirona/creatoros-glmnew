@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
@@ -6,6 +7,8 @@ export const dynamic = 'force-dynamic'
 // Returns only whether each feature is enabled (no admin-only data)
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const setting = await db.adminSetting.findUnique({ where: { key: 'ai_features' } })
     let features: Record<string, boolean> = {}
     if (setting?.value) {

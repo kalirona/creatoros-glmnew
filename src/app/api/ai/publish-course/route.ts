@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
@@ -6,6 +7,8 @@ export const dynamic = 'force-dynamic'
 // POST — publish an AI-generated course into the Courses module (real DB persistence)
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { generationId } = body as { generationId?: string }
     if (!generationId) return NextResponse.json({ error: 'generationId required' }, { status: 400 })

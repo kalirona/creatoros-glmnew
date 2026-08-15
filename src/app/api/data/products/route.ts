@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const products = await db.product.findMany({ orderBy: { createdAt: 'desc' } })
     return NextResponse.json(products.map((p) => ({
       id: p.id, name: p.name, description: p.description, type: p.type, price: p.price,
@@ -21,6 +24,8 @@ export async function GET() {
 // POST — create product
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { name, description, type, price, compareAt, coverUrl, fileUrl, status } = body
 
@@ -53,6 +58,8 @@ export async function POST(req: NextRequest) {
 // PUT — update product
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, name, description, type, price, compareAt, coverUrl, fileUrl, status } = body
 
@@ -81,6 +88,8 @@ export async function PUT(req: NextRequest) {
 // DELETE — delete product
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { searchParams } = new URL(req.url)
     const id = searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 })

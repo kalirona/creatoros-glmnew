@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +27,8 @@ export async function GET(req: NextRequest) {
 // POST — create a new page
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { title, slug, type = 'PAGE', category = 'General' } = body
     if (!title || !slug) return NextResponse.json({ error: 'title and slug required' }, { status: 400 })
@@ -41,6 +44,8 @@ export async function POST(req: NextRequest) {
 // PUT — update page (status, title, slug, SEO, category)
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json()
     const { id, status, title, slug, seoTitle, seoDescription, category } = body
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
@@ -70,6 +75,8 @@ export async function PUT(req: NextRequest) {
 // DELETE — delete a page
 export async function DELETE(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
     await db.page.delete({ where: { id } })
