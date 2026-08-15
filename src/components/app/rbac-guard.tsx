@@ -18,7 +18,7 @@ export function RbacGuard({ moduleId, children }: RbacGuardProps) {
   const userRole = useAppStore((s) => s.userRole)
   const navigateTo = useAppStore((s) => s.navigateTo)
 
-  if (canAccessModule(moduleId, userRole)) {
+  if (userRole && canAccessModule(moduleId, userRole)) {
     return <>{children}</>
   }
 

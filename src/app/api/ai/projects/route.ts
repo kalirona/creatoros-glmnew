@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getDemoUser, DEMO_WORKSPACE_ID } from '@/lib/creator-ai'
+import { getCurrentUser } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 
 // GET /api/ai/projects — list projects for the user.
 export async function GET() {
   try {
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
 
     const projects = await db.aiProject.findMany({
-      where: { workspaceId: DEMO_WORKSPACE_ID, userId: user.id },
+      where: { workspaceId: user.workspaceId, userId: user.id },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -63,14 +63,14 @@ export async function POST(req: NextRequest) {
         ? color
         : '#10b981'
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
 
     const project = await db.aiProject.create({
       data: {
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         name: name.trim(),
         description: cleanDesc,

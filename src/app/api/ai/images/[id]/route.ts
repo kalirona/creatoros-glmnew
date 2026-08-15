@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { safeJsonParse, DEMO_WORKSPACE_ID } from '@/lib/creator-ai'
+import { safeJsonParse } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +11,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
+
     const { id } = await params
     const asset = await db.aiAsset.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'IMAGE' },
+      where: { id, workspaceId: user.workspaceId, type: 'IMAGE' },
     })
     if (!asset) {
       return NextResponse.json({ error: 'Image not found.' }, { status: 404 })
@@ -49,6 +53,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const { name, description, isFavorite, tags } = body as {
@@ -59,7 +65,7 @@ export async function PATCH(
     }
 
     const existing = await db.aiAsset.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'IMAGE' },
+      where: { id, workspaceId: user.workspaceId, type: 'IMAGE' },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Image not found.' }, { status: 404 })

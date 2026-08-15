@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   parsePagination,
-  getDemoUser,
-  DEMO_WORKSPACE_ID,
 } from '@/lib/creator-ai'
 import type { Prisma } from '@prisma/client'
 
@@ -21,7 +20,7 @@ export async function GET(req: NextRequest) {
     const fromParam = searchParams.get('from') || ''
     const toParam = searchParams.get('to') || ''
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }

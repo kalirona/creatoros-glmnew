@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generateText } from '@/lib/ai-engine'
-import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
+import { mapEngineError } from "@/lib/creator-ai"
+import { getCurrentUser } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
     const { selling, category } = body as { selling?: string; category?: string }
     if (!selling?.trim()) return NextResponse.json({ error: 'What are you selling? is required' }, { status: 400 })
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) return NextResponse.json({ error: 'No user' }, { status: 400 })
 
     // Use the AI Engine — routes through ApprovedModel
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
       toolSlug: 'LANDING_PAGE_GENERATOR',
       userInput: `What I'm selling: ${selling}\nCategory: ${category || 'General'}`,
       userId: user.id,
-      workspaceId: DEMO_WORKSPACE_ID,
+      workspaceId: user.workspaceId,
       systemPrompt: SYSTEM_PROMPT,
       title: selling.slice(0, 60),
       routeCategory: 'WEBSITE',

@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 const TEAM = [
-  { name: 'Alex Rivera', email: 'founder@creatoros.io', role: 'Owner', initials: 'AR', color: 'bg-primary/15 text-primary' },
+  { name: 'Current User', email: 'user@example.com', role: 'Owner', initials: 'U', color: 'bg-primary/15 text-primary' },
   { name: 'Jamie Chen', email: 'jamie@creatoros.io', role: 'Admin', initials: 'JC', color: 'bg-violet-500/15 text-violet-600' },
   { name: 'Priya Patel', email: 'priya@creatoros.io', role: 'Instructor', initials: 'PP', color: 'bg-amber-500/15 text-amber-600' },
   { name: 'Marcus Lee', email: 'marcus@creatoros.io', role: 'Moderator', initials: 'ML', color: 'bg-sky-500/15 text-sky-600' },
@@ -59,8 +59,8 @@ export function SettingsModule() {
                 <div><Button size="sm" variant="outline" onClick={() => toast.info('Upload avatar', { description: 'Choose an image file (JPG, PNG, GIF — max 2MB)' })}>Change avatar</Button><p className="text-xs text-muted-foreground mt-1.5">JPG, PNG or GIF. Max 2MB.</p></div>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <div><Label>Full name</Label><Input defaultValue="Alex Rivera" className="mt-1.5" /></div>
-                <div><Label>Email</Label><Input defaultValue="founder@creatoros.io" className="mt-1.5" /></div>
+                <div><Label>Full name</Label><Input defaultValue="" className="mt-1.5" /></div>
+                <div><Label>Email</Label><Input defaultValue="" className="mt-1.5" /></div>
                 <div><Label>Username</Label><Input defaultValue="@alexrivera" className="mt-1.5" /></div>
                 <div><Label>Timezone</Label><Select defaultValue="Asia/Manila"><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Asia/Manila">Asia/Manila (PHT)</SelectItem><SelectItem value="America/New_York">America/New_York (EST)</SelectItem><SelectItem value="Europe/London">Europe/London (GMT)</SelectItem></SelectContent></Select></div>
               </div>

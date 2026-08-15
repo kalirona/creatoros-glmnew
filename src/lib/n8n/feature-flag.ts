@@ -13,7 +13,6 @@
 // ============================================================================
 
 import { db } from '@/lib/db'
-import { DEMO_WORKSPACE_ID } from '@/lib/creator-ai'
 
 // Cache the DB lookup result for 60s to avoid querying on every request
 let cachedFlag: boolean | null = null

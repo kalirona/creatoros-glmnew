@@ -29,9 +29,13 @@ interface AppState {
   previewCourseId: string | null
   openPreview: (courseId: string) => void
   closePreview: () => void
-  /** RBAC — current user's platform role. Defaults to SUPER_ADMIN in sandbox (demo mode). */
-  userRole: UserRole
-  setUserRole: (role: UserRole) => void
+  /** RBAC — current user's platform role. Fetched from /api/auth/me.
+   * null = not yet loaded / unauthenticated. */
+  userRole: UserRole | null
+  setUserRole: (role: UserRole | null) => void
+  /** Current user identity (name, email, avatar). Fetched from /api/auth/me. */
+  currentUser: { id: string; email: string; name: string; avatarUrl: string | null; role: string; credits: number } | null
+  setCurrentUser: (user: { id: string; email: string; name: string; avatarUrl: string | null; role: string; credits: number } | null) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -58,10 +62,11 @@ export const useAppStore = create<AppState>()(
       previewCourseId: null,
       openPreview: (courseId) => set({ previewCourseId: courseId }),
       closePreview: () => set({ previewCourseId: null }),
-      // RBAC — sandbox defaults to SUPER_ADMIN so the admin pages are visible.
-      // In production this would be set from the authenticated session.
-      userRole: 'SUPER_ADMIN',
+      // RBAC — null until /api/auth/me resolves the real user
+      userRole: null,
       setUserRole: (role) => set({ userRole: role }),
+      currentUser: null,
+      setCurrentUser: (user) => set({ currentUser: user }),
     }),
     {
       name: 'creatoros-app',

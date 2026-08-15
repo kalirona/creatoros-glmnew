@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   serializeCreatorAsset,
   parsePagination,
-  DEMO_WORKSPACE_ID,
 } from '@/lib/creator-ai'
 import type { Prisma } from '@prisma/client'
 
@@ -26,6 +26,9 @@ const VALID_FOLDERS = [
 // GET /api/ai/assets — list assets (the Media Library).
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const { page, pageSize, skip, take } = parsePagination(req)
 
@@ -37,7 +40,7 @@ export async function GET(req: NextRequest) {
     const tagParam = searchParams.get('tag') || ''
 
     const where: Prisma.AiAssetWhereInput = {
-      workspaceId: DEMO_WORKSPACE_ID,
+      workspaceId: user.workspaceId,
     }
     if (typeParam && VALID_TYPES.has(typeParam)) {
       where.type = typeParam
@@ -75,7 +78,7 @@ export async function GET(req: NextRequest) {
       Promise.all(
         VALID_FOLDERS.map((f) =>
           db.aiAsset
-            .count({ where: { workspaceId: DEMO_WORKSPACE_ID, folder: f } })
+            .count({ where: { workspaceId: user.workspaceId, folder: f } })
             .then((count) => ({ name: f, count })),
         ),
       ),

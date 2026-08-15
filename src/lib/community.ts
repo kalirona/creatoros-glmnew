@@ -1,8 +1,8 @@
 import { db } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
 
-// Lightweight workspace resolver — resolves the active workspace + user for the current request.
-// In this demo environment there's no auth system, so we use the first workspace + first OWNER member.
-// In production this would be replaced by JWT/session-based auth.
+// Workspace resolver — resolves the active workspace + user for the current request.
+// Uses getCurrentUser() (Clerk → CreatorOS identity bridge) for real authentication.
 
 export interface ResolvedContext {
   user: {
@@ -18,46 +18,40 @@ export interface ResolvedContext {
   memberId: string
 }
 
-let cached: ResolvedContext | null = null
-
 export async function getContext(): Promise<ResolvedContext | null> {
-  if (cached) return cached
-  const workspace = await db.workspace.findFirst({ orderBy: { createdAt: 'asc' } })
-  if (!workspace) return null
+  const currentUser = await getCurrentUser()
+  if (!currentUser) return null
+
   const membership = await db.workspaceMember.findFirst({
-    where: { workspaceId: workspace.id, role: 'OWNER' },
-    include: { user: true },
-    orderBy: { createdAt: 'asc' },
+    where: { userId: currentUser.id, workspaceId: currentUser.workspaceId },
   })
+
   if (!membership) {
-    // fallback: first member
+    // User has no membership in this workspace — try any workspace
     const fallback = await db.workspaceMember.findFirst({
-      where: { workspaceId: workspace.id },
-      include: { user: true },
-      orderBy: { createdAt: 'asc' },
+      where: { userId: currentUser.id },
     })
     if (!fallback) return null
-    cached = {
+    return {
       user: {
-        id: fallback.user.id, email: fallback.user.email, name: fallback.user.name,
-        avatarUrl: fallback.user.avatarUrl, role: fallback.user.role, credits: fallback.user.credits,
+        id: currentUser.id, email: currentUser.email, name: currentUser.name,
+        avatarUrl: currentUser.avatarUrl, role: currentUser.role, credits: currentUser.credits,
       },
-      workspaceId: workspace.id,
+      workspaceId: fallback.workspaceId,
       workspaceRole: fallback.role,
       memberId: fallback.id,
     }
-    return cached
   }
-  cached = {
+
+  return {
     user: {
-      id: membership.user.id, email: membership.user.email, name: membership.user.name,
-      avatarUrl: membership.user.avatarUrl, role: membership.user.role, credits: membership.user.credits,
+      id: currentUser.id, email: currentUser.email, name: currentUser.name,
+      avatarUrl: currentUser.avatarUrl, role: currentUser.role, credits: currentUser.credits,
     },
-    workspaceId: workspace.id,
+    workspaceId: currentUser.workspaceId,
     workspaceRole: membership.role,
     memberId: membership.id,
   }
-  return cached
 }
 
 // ─── Permission checks ─────────────────────────────────────────────────────

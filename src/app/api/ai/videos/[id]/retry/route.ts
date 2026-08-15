@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { resolveRoute, estimateCost, deductCredits, checkCredits, trackUsage, writeLog } from '@/lib/ai-engine'
 import {
-  getDemoUser,
-  DEMO_WORKSPACE_ID,
   mapEngineError,
   safeJsonParse,
 } from '@/lib/creator-ai'
@@ -20,8 +19,13 @@ export async function POST(
   try {
     const { id } = await params
 
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
+    }
+
     const original = await db.aiJob.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'VIDEO_GEN' },
+      where: { id, workspaceId: user.workspaceId, type: 'VIDEO_GEN' },
     })
     if (!original) {
       return NextResponse.json({ error: 'Video job not found.' }, { status: 404 })
@@ -31,11 +35,6 @@ export async function POST(
         { error: 'Only failed video jobs can be retried.' },
         { status: 400 },
       )
-    }
-
-    const user = await getDemoUser()
-    if (!user) {
-      return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
 
     // ── Resolve route — VIDEO only (no fallback to IMAGE) ────────────────
@@ -67,7 +66,7 @@ export async function POST(
 
     const newJob = await db.aiJob.create({
       data: {
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         providerId: route.providerId,
         providerSlug: route.providerSlug,
@@ -95,7 +94,7 @@ export async function POST(
     // ── Track usage + log ─────────────────────────────────────────────────
     await Promise.all([
       trackUsage({
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         toolSlug: 'VIDEO_GEN',
         routeCategory: 'VIDEO',
@@ -107,7 +106,7 @@ export async function POST(
         durationMs: 0,
       }).catch(() => {}),
       writeLog({
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         providerId: route.providerId,
         providerSlug: route.providerSlug,

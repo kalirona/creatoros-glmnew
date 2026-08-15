@@ -19,7 +19,7 @@ import {
 import { BuyCreditsDialog } from '@/components/app/buy-credits-dialog'
 
 export function Sidebar() {
-  const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar, userRole } = useAppStore()
+  const { activeModule, setActiveModule, navigateTo, sidebarCollapsed, toggleSidebar, userRole, currentUser: user } = useAppStore()
   const [credits, setCredits] = useState(4280)
   const [buyOpen, setBuyOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -230,8 +230,8 @@ export function Sidebar() {
               {!sidebarCollapsed && (
                 <>
                   <div className="flex-1 text-left min-w-0">
-                    <p className="text-xs font-semibold truncate">Alex Rivera</p>
-                    <p className="text-[10px] text-muted-foreground truncate">alex@creatoros.io</p>
+                    <p className="text-xs font-semibold truncate">{user?.name || "User"}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{user?.email || ""}</p>
                   </div>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 </>
@@ -244,8 +244,8 @@ export function Sidebar() {
                 <AvatarFallback className="bg-primary/15 text-primary text-xs font-semibold">AR</AvatarFallback>
               </Avatar>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">Alex Rivera</p>
-                <p className="text-xs text-muted-foreground truncate">alex@creatoros.io</p>
+                <p className="text-sm font-semibold truncate">{user?.name || "User"}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email || ""}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />

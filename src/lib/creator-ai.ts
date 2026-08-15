@@ -7,41 +7,15 @@
 
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
-
-// ─── Demo user / workspace resolver ────────────────────────────────────────
-// Matches the existing pattern used across the codebase:
-//   const user = await db.user.findFirst({ orderBy: { createdAt: 'asc' } })
-// First user is the demo user; workspaceId = 'default' for all creator ops.
-export const DEMO_WORKSPACE_ID = 'default'
-
-export async function getDemoUser() {
-  // Prefer a SUPER_ADMIN user (so admin pages work on fresh installs),
-  // otherwise fall back to the first user by creation date.
-  const admin = await db.user.findFirst({
-    where: { role: 'SUPER_ADMIN' },
-    orderBy: { createdAt: 'asc' },
-  })
-  if (admin) return admin
-  return db.user.findFirst({ orderBy: { createdAt: 'asc' } })
-}
+import { getCurrentUser } from '@/lib/auth'
 
 // ─── Super Admin authorization ─────────────────────────────────────────────
 // All admin API routes (src/app/api/admin/**) MUST call this at the top of
-// every handler. It resolves the authenticated user and verifies their role
-// is SUPER_ADMIN. If not, it returns a 403 NextResponse.
+// every handler. It resolves the authenticated Clerk user and verifies their
+// role is SUPER_ADMIN. If not, it returns a 403 NextResponse.
 //
-// Usage:
-//   import { requireSuperAdmin } from '@/lib/creator-ai'
-//   export async function GET() {
-//     const auth = await requireSuperAdmin()
-//     if (auth.error) return auth.error
-//     const user = auth.user
-//     // ... handler logic
-//   }
-//
-// This ensures direct API access by non-super-admins returns 403, not just
-// hiding the UI. The RBAC guard in the sidebar is a UX layer; this is the
-// security layer.
+// This uses getCurrentUser() (Clerk → CreatorOS identity bridge) — NOT
+// getDemoUser(). The demo identity resolver has been removed.
 
 export interface SuperAdminAuth {
   user: { id: string; email: string; name: string; role: string } | null
@@ -49,11 +23,11 @@ export interface SuperAdminAuth {
 }
 
 export async function requireSuperAdmin(): Promise<SuperAdminAuth> {
-  const user = await getDemoUser()
+  const user = await getCurrentUser()
   if (!user) {
     return {
       user: null,
-      error: NextResponse.json({ error: 'Authentication required.' }, { status: 401 }),
+      error: NextResponse.json({ error: 'Authentication required. Please sign in.' }, { status: 401 }),
     }
   }
   if (user.role !== 'SUPER_ADMIN') {

@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   serializeCreatorAsset,
-  getDemoUser,
-  DEMO_WORKSPACE_ID,
 } from '@/lib/creator-ai'
 import { Prisma } from '@prisma/client'
 
@@ -18,7 +17,7 @@ function startOfToday(): Date {
 // GET /api/ai/dashboard — everything the AI Studio Dashboard needs.
 export async function GET() {
   try {
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
@@ -62,7 +61,7 @@ export async function GET() {
         ].map((folder) =>
           db.aiAsset
             .count({
-              where: { workspaceId: DEMO_WORKSPACE_ID, folder },
+              where: { workspaceId: folder },
             })
             .then((count) => ({ folder, count })),
         ),
@@ -79,7 +78,7 @@ export async function GET() {
         },
       }),
       db.aiAsset.findMany({
-        where: { workspaceId: DEMO_WORKSPACE_ID, isFavorite: true },
+        where: { workspaceId: user.workspaceId, isFavorite: true },
         orderBy: { createdAt: 'desc' },
         take: 4,
       }),

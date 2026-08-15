@@ -44,6 +44,7 @@ export interface CurrentUser {
   credits: number      // CreatorOS-owned
   bio: string | null   // CreatorOS-owned
   activeWorkspaceId: string | null
+  workspaceId: string  // Resolved workspace ID (from membership or first workspace)
 }
 
 /** Error codes the identity bridge can produce. */
@@ -119,7 +120,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   })
 
   if (existingByClerkId) {
-    return toCurrentUser(existingByClerkId)
+    return await toCurrentUser(existingByClerkId)
   }
 
   // 4. Get the Clerk user's primary email address
@@ -160,7 +161,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       data: { clerkId: clerkUserId },
     })
 
-    return toCurrentUser(linked)
+    return await toCurrentUser(linked)
   }
 
   // 6. Case C: No existing CreatorOS User — create a new one from Clerk data
@@ -179,13 +180,17 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     },
   })
 
-  return toCurrentUser(created)
+  return await toCurrentUser(created)
 }
 
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
-/** Map a Prisma User row to the CurrentUser interface. */
-function toCurrentUser(user: {
+/**
+ * Map a Prisma User row to the CurrentUser interface.
+ * Resolves the user's workspace from activeWorkspaceId, or falls back to
+ * their first WorkspaceMember entry, or the first workspace in the DB.
+ */
+async function toCurrentUser(user: {
   id: string
   clerkId: string | null
   email: string
@@ -195,7 +200,21 @@ function toCurrentUser(user: {
   credits: number
   bio: string | null
   activeWorkspaceId: string | null
-}): CurrentUser {
+}): Promise<CurrentUser> {
+  // Resolve workspaceId: activeWorkspaceId → first membership → first workspace
+  let workspaceId = user.activeWorkspaceId
+  if (!workspaceId) {
+    const membership = await db.workspaceMember.findFirst({
+      where: { userId: user.id },
+      select: { workspaceId: true },
+    })
+    workspaceId = membership?.workspaceId || null
+  }
+  if (!workspaceId) {
+    const firstWs = await db.workspace.findFirst({ select: { id: true } })
+    workspaceId = firstWs?.id || 'default'
+  }
+
   return {
     id: user.id,
     clerkId: user.clerkId,
@@ -206,5 +225,6 @@ function toCurrentUser(user: {
     credits: user.credits,
     bio: user.bio,
     activeWorkspaceId: user.activeWorkspaceId,
+    workspaceId,
   }
 }

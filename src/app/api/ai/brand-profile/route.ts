@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { DEMO_WORKSPACE_ID } from '@/lib/creator-ai'
+
 
 export const dynamic = 'force-dynamic'
 
@@ -27,8 +28,11 @@ interface BrandProfileBody {
 // GET /api/ai/brand-profile — return the workspace's brand profile.
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
+
     const profile = await db.aiBrandProfile.findUnique({
-      where: { workspaceId: DEMO_WORKSPACE_ID },
+      where: { workspaceId: user.workspaceId },
     })
     if (!profile) {
       // Return defaults if not seeded
@@ -69,6 +73,8 @@ export async function GET() {
 // PUT /api/ai/brand-profile — upsert the workspace's brand profile.
 export async function PUT(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const body = await req.json().catch(() => ({})) as BrandProfileBody
 
     // Light validation
@@ -134,8 +140,8 @@ export async function PUT(req: NextRequest) {
     }
 
     const profile = await db.aiBrandProfile.upsert({
-      where: { workspaceId: DEMO_WORKSPACE_ID },
-      create: { workspaceId: DEMO_WORKSPACE_ID, ...data },
+      where: { workspaceId: user.workspaceId },
+      create: { workspaceId: user.workspaceId, ...data },
       update: data,
     })
 

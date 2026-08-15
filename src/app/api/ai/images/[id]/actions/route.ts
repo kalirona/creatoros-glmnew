@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   deductCredits,
@@ -7,8 +8,6 @@ import {
   writeLog,
 } from '@/lib/ai-engine'
 import {
-  getDemoUser,
-  DEMO_WORKSPACE_ID,
   mapEngineError,
 } from '@/lib/creator-ai'
 
@@ -69,18 +68,18 @@ export async function POST(
       }
     }
 
+    // ── Resolve authenticated user ──────────────────────────────────────────
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
+    }
+
     // ── Fetch original asset ────────────────────────────────────────────────
     const original = await db.aiAsset.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'IMAGE' },
+      where: { id, workspaceId: user.workspaceId, type: 'IMAGE' },
     })
     if (!original) {
       return NextResponse.json({ error: 'Image not found.' }, { status: 404 })
-    }
-
-    // ── Demo user ─────────────────────────────────────────────────────────
-    const user = await getDemoUser()
-    if (!user) {
-      return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
 
     // ── Credit check ───────────────────────────────────────────────────────
@@ -125,7 +124,7 @@ export async function POST(
     // ── Save new asset (reuses original URL — sandbox) ─────────────────────
     const newAsset = await db.aiAsset.create({
       data: {
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         type: 'IMAGE',
         folder: original.folder || 'AI Images',
@@ -169,7 +168,7 @@ export async function POST(
     await db.aiGeneration.create({
       data: {
         userId: user.id,
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         toolId: tool?.id || 'image-gen',
         toolSlug: 'IMAGE_EDIT',
         routeCategory: 'IMAGE',
@@ -204,7 +203,7 @@ export async function POST(
     })
     await Promise.all([
       trackUsage({
-        workspaceId: DEMO_WORKSPACE_ID,
+        workspaceId: user.workspaceId,
         userId: user.id,
         toolSlug: 'IMAGE_EDIT',
         routeCategory: 'IMAGE',
@@ -217,7 +216,7 @@ export async function POST(
       }).catch(() => {}),
       imageProvider
         ? writeLog({
-            workspaceId: DEMO_WORKSPACE_ID,
+            workspaceId: user.workspaceId,
             userId: user.id,
             providerId: imageProvider.id,
             providerSlug: imageProvider.slug,

@@ -1,4 +1,5 @@
 'use client'
+import { useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/app/sidebar'
@@ -74,11 +75,33 @@ export default function Home() {
   const { isSignedIn, isLoaded } = useUser()
   const activeModule = useAppStore((s) => s.activeModule)
   const builderCourseId = useAppStore((s) => s.builderCourseId)
+  const setUserRole = useAppStore((s) => s.setUserRole)
+  const setCurrentUser = useAppStore((s) => s.setCurrentUser)
+
+  // Fetch real user identity from /api/auth/me when signed in
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      fetch('/api/auth/me')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data) {
+            setUserRole(data.role as any)
+            setCurrentUser({
+              id: data.id, email: data.email, name: data.name,
+              avatarUrl: data.avatarUrl, role: data.role, credits: data.credits,
+            })
+          }
+        })
+        .catch(() => {})
+    } else if (isLoaded && !isSignedIn) {
+      // Clear identity on sign-out
+      setUserRole(null)
+      setCurrentUser(null)
+    }
+  }, [isLoaded, isSignedIn, setUserRole, setCurrentUser])
 
   // If Clerk has loaded and user is signed in → show dashboard
   // Otherwise (not loaded yet, or loaded but not signed in) → show landing page
-  // This prevents infinite loading when Clerk env vars are not configured
-  // (isLoaded stays false → landing page shows immediately)
   const showDashboard = isLoaded && isSignedIn
 
   if (!showDashboard) {

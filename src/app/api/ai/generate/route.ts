@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { generateText } from '@/lib/ai-engine'
-import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
+import { mapEngineError } from "@/lib/creator-ai"
+import { getCurrentUser } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'toolSlug and input are required' }, { status: 400 })
     }
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       systemPrompt: '',
       userInput: input,
       userId: user.id,
-      workspaceId: DEMO_WORKSPACE_ID,
+      workspaceId: user.workspaceId,
       title: input.slice(0, 80),
     })
 

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import {
   serializeCreatorAsset,
-  DEMO_WORKSPACE_ID,
 } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
@@ -45,9 +45,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
+
     const { id } = await params
     const project = await db.aiProject.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID },
+      where: { id, workspaceId: user.workspaceId },
     })
     if (!project) {
       return NextResponse.json({ error: 'Project not found.' }, { status: 404 })
@@ -57,7 +60,7 @@ export async function GET(
     // in our schema there's no direct projectId on AiAsset, so we approximate
     // by listing recent assets in this workspace (creator can filter further).
     const assets = await db.aiAsset.findMany({
-      where: { workspaceId: DEMO_WORKSPACE_ID },
+      where: { workspaceId: user.workspaceId },
       orderBy: { createdAt: 'desc' },
       take: 50,
     })
@@ -81,6 +84,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const { name, description, color, status } = body as {
@@ -91,7 +96,7 @@ export async function PATCH(
     }
 
     const existing = await db.aiProject.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID },
+      where: { id, workspaceId: user.workspaceId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Project not found.' }, { status: 404 })
@@ -120,9 +125,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { id } = await params
     const existing = await db.aiProject.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID },
+      where: { id, workspaceId: user.workspaceId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Project not found.' }, { status: 404 })

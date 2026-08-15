@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText } from '@/lib/ai-engine'
-import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
+import { mapEngineError } from "@/lib/creator-ai"
+import { getCurrentUser } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     const instruction = ACTION_PROMPTS[action]
     if (!instruction) return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) return NextResponse.json({ error: 'No user' }, { status: 400 })
 
     // Use the AI Engine — routes through ApprovedModel
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
       toolSlug: 'AI_CHAT',  // reuse chat tool for section rewrite
       userInput: JSON.stringify(content, null, 2),
       userId: user.id,
-      workspaceId: DEMO_WORKSPACE_ID,
+      workspaceId: user.workspaceId,
       systemPrompt: `You are an expert copywriter for creator businesses. You improve ${sectionType || 'page'} section content. ${instruction}`,
       title: `Section ${action}`,
       routeCategory: 'WEBSITE',

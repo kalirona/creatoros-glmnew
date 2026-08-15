@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText } from '@/lib/ai-engine'
-import { getDemoUser, DEMO_WORKSPACE_ID, mapEngineError } from '@/lib/creator-ai'
+import { mapEngineError } from "@/lib/creator-ai"
+import { getCurrentUser } from "@/lib/auth"
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No user message found' }, { status: 400 })
     }
 
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
     }
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
       toolSlug: 'AI_CHAT',
       userInput: conversationInput,
       userId: user.id,
-      workspaceId: DEMO_WORKSPACE_ID,
+      workspaceId: user.workspaceId,
       systemPrompt,
       title: lastUserMsg.content.slice(0, 80),
       routeCategory: 'WRITING',

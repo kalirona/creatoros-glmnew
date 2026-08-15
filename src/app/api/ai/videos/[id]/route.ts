@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { safeJsonParse, DEMO_WORKSPACE_ID } from '@/lib/creator-ai'
+import { safeJsonParse } from '@/lib/creator-ai'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +11,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
+
     const { id } = await params
     const job = await db.aiJob.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'VIDEO_GEN' },
+      where: { id, workspaceId: user.workspaceId, type: 'VIDEO_GEN' },
     })
     if (!job) {
       return NextResponse.json({ error: 'Video job not found.' }, { status: 404 })
@@ -22,7 +26,7 @@ export async function GET(
     let assetId: string | undefined
     if (job.resultUrl) {
       const asset = await db.aiAsset.findFirst({
-        where: { workspaceId: DEMO_WORKSPACE_ID, url: job.resultUrl },
+        where: { workspaceId: user.workspaceId, url: job.resultUrl },
         select: { id: true },
       })
       assetId = asset?.id
@@ -57,6 +61,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: "Authentication required." }, { status: 401 })
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const { status } = body as { status?: string }
@@ -69,7 +75,7 @@ export async function PATCH(
     }
 
     const existing = await db.aiJob.findFirst({
-      where: { id, workspaceId: DEMO_WORKSPACE_ID, type: 'VIDEO_GEN' },
+      where: { id, workspaceId: user.workspaceId, type: 'VIDEO_GEN' },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Video job not found.' }, { status: 404 })

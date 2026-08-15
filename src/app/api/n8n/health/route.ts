@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server'
-import { getDemoUser } from '@/lib/creator-ai'
+import { getCurrentUser } from '@/lib/auth'
 import { checkN8nHealth, listWorkflows, getRecentN8nOperations } from '@/lib/n8n'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   try {
     // 1. Authenticate
-    const user = await getDemoUser()
+    const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
     }

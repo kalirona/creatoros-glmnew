@@ -1303,7 +1303,7 @@ function EventsView({ events: initialEvents }: { events: EventItem[] }) {
 function LeaderboardView() {
   const [period, setPeriod] = useState<'weekly' | 'monthly' | 'all'>('weekly')
   const entries = [
-    { name: 'Alex Rivera', points: 420, posts: 12, comments: 34, initials: 'AR', color: 'bg-amber-500/15 text-amber-600' },
+    { name: 'User', points: 0, posts: 0, comments: 0, initials: 'U', color: 'bg-amber-500/15 text-amber-600' },
     { name: 'Priya Patel', points: 380, posts: 8, comments: 28, initials: 'PP', color: 'bg-violet-500/15 text-violet-600' },
     { name: 'Jamie Chen', points: 320, posts: 6, comments: 22, initials: 'JC', color: 'bg-emerald-500/15 text-emerald-600' },
     { name: 'Marcus Lee', points: 280, posts: 5, comments: 18, initials: 'ML', color: 'bg-sky-500/15 text-sky-600' },
