@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth'
 import { SuperAdminModule } from '@/components/modules/superadmin'
 
@@ -8,11 +8,11 @@ export default async function SuperAdminPage() {
   const user = await getCurrentUser()
 
   if (!user) {
-    return NextResponse.redirect(new URL('/sign-in', process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'))
+    redirect('/sign-in')
   }
 
   if (user.role !== 'SUPER_ADMIN') {
-    return NextResponse.redirect(new URL('/', process.env.NEXT_PUBLIC_URL || 'http://localhost:3000'))
+    redirect('/')
   }
 
   return <SuperAdminModule />

@@ -77,6 +77,7 @@ export default function Home() {
   const builderCourseId = useAppStore((s) => s.builderCourseId)
   const setUserRole = useAppStore((s) => s.setUserRole)
   const setCurrentUser = useAppStore((s) => s.setCurrentUser)
+  const setActiveModule = useAppStore((s) => s.setActiveModule)
 
   // Fetch real user identity from /api/auth/me when signed in
   useEffect(() => {
@@ -90,6 +91,8 @@ export default function Home() {
               id: data.id, email: data.email, name: data.name,
               avatarUrl: data.avatarUrl, role: data.role, credits: data.credits,
             })
+            // Ensure we're on the dashboard when user just signed in
+            setActiveModule('dashboard')
           }
         })
         .catch(() => {})
@@ -98,7 +101,7 @@ export default function Home() {
       setUserRole(null)
       setCurrentUser(null)
     }
-  }, [isLoaded, isSignedIn, setUserRole, setCurrentUser])
+  }, [isLoaded, isSignedIn, setUserRole, setCurrentUser, setActiveModule])
 
   // If Clerk has loaded and user is signed in → show dashboard
   // Otherwise (not loaded yet, or loaded but not signed in) → show landing page

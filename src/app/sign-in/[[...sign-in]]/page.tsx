@@ -1,11 +1,8 @@
 // ============================================================================
-// Clerk Sign-In Page — Phase B (Foundation)
+// Clerk Sign-In Page
 // ----------------------------------------------------------------------------
-// Renders Clerk's <SignIn /> component. No custom login UI, no password
-// handling, no session logic. Clerk owns the entire authentication flow.
-//
-// User synchronization (linking Clerk users to CreatorOS User records) is
-// Phase C — this page does NOT create or modify any database records.
+// Renders Clerk's <SignIn /> component with redirect to / after login.
+// Clerk handles the entire authentication flow.
 // ============================================================================
 
 import { SignIn } from '@clerk/nextjs'
@@ -20,6 +17,10 @@ export default function SignInPage() {
             card: 'shadow-xl',
           },
         }}
+        routing="path"
+        path="/sign-in"
+        fallbackRedirectUrl="/"
+        forceRedirectUrl="/"
       />
     </div>
   )

@@ -1,11 +1,8 @@
 // ============================================================================
-// Clerk Sign-Up Page — Phase B (Foundation)
+// Clerk Sign-Up Page
 // ----------------------------------------------------------------------------
-// Renders Clerk's <SignUp /> component. No custom registration logic, no
-// database user creation. Clerk owns the entire signup flow.
-//
-// User synchronization (creating CreatorOS User records from Clerk users) is
-// Phase C — this page does NOT create or modify any database records.
+// Renders Clerk's <SignUp /> component with redirect to / after signup.
+// Clerk handles the entire registration flow.
 // ============================================================================
 
 import { SignUp } from '@clerk/nextjs'
@@ -20,6 +17,10 @@ export default function SignUpPage() {
             card: 'shadow-xl',
           },
         }}
+        routing="path"
+        path="/sign-up"
+        fallbackRedirectUrl="/"
+        forceRedirectUrl="/"
       />
     </div>
   )
