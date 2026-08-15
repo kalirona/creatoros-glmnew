@@ -15,7 +15,7 @@ import { getCurrentUser } from '@/lib/auth'
 // role is SUPER_ADMIN. If not, it returns a 403 NextResponse.
 //
 // This uses getCurrentUser() (Clerk → CreatorOS identity bridge) — NOT
-// getDemoUser(). The demo identity resolver has been removed.
+// getDemoUser() has been removed. Clerk is the only auth source.
 
 export interface SuperAdminAuth {
   user: { id: string; email: string; name: string; role: string } | null

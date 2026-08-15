@@ -9,7 +9,7 @@
 //   Browser → Clerk Middleware (passthrough) → Existing CreatorOS app
 //
 // Phase D will add route protection (auth.protect()) to specific routes.
-// Until then, getDemoUser() remains the active authentication mechanism.
+// Clerk is the only authentication source. Demo identity has been removed.
 // ============================================================================
 
 import { clerkMiddleware } from '@clerk/nextjs/server'

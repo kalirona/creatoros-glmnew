@@ -10,7 +10,7 @@
 //   2. Clerk's userId is stored ONLY in User.clerkId.
 //   3. Existing User records are linked (not duplicated) by email match.
 //   4. CreatorOS role/credits/bio are NEVER overwritten by Clerk data.
-//   5. This function does NOT fall back to getDemoUser() — if there's no
+//   5. This function does NOT fall back to demo identity — if there's no
 //      Clerk session, it returns null. Callers that need fallback behavior
 //      must implement it explicitly.
 //
@@ -22,7 +22,7 @@
 //         → found: link clerkId, return User (Case B)
 //         → not found: create new User from Clerk data (Case C)
 //
-// Phase C: This bridge exists alongside getDemoUser(). API routes are NOT
+// Clerk identity bridge. All API routes now use getCurrentUser().
 // migrated yet — they still use getDemoUser(). Phase D will migrate them.
 // ============================================================================
 
