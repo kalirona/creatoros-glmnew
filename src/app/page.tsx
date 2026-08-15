@@ -1,5 +1,4 @@
 'use client'
-import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from '@/components/app/sidebar'
@@ -75,33 +74,14 @@ export default function Home() {
   const { isSignedIn, isLoaded } = useUser()
   const activeModule = useAppStore((s) => s.activeModule)
   const builderCourseId = useAppStore((s) => s.builderCourseId)
-  const [clerkTimeout, setClerkTimeout] = useState(false)
 
-  // Safety timeout: if Clerk doesn't initialize within 3 seconds
-  // (e.g., env vars not configured), fall through to landing page.
-  // This prevents the infinite spinner when Clerk keys are missing.
-  useEffect(() => {
-    if (!isLoaded) {
-      const timer = setTimeout(() => setClerkTimeout(true), 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [isLoaded])
+  // If Clerk has loaded and user is signed in → show dashboard
+  // Otherwise (not loaded yet, or loaded but not signed in) → show landing page
+  // This prevents infinite loading when Clerk env vars are not configured
+  // (isLoaded stays false → landing page shows immediately)
+  const showDashboard = isLoaded && isSignedIn
 
-  // If Clerk is loaded, use real auth state
-  // If Clerk timed out (no keys configured), treat as unauthenticated
-  const authResolved = isLoaded || clerkTimeout
-  const effectivelySignedIn = isLoaded && isSignedIn
-
-  // Show landing page for unauthenticated users (or when Clerk isn't configured)
-  if (!authResolved) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    )
-  }
-
-  if (!effectivelySignedIn) {
+  if (!showDashboard) {
     return <LandingPage />
   }
 
