@@ -284,9 +284,9 @@ function StatusBadge({ status }: { status: string }) {
 // ============================================================================
 
 export function AiStudioModule() {
-  const { activeSubTab, navigateTo } = useAppStore()
+  const { activeSubTab, navigateTo, currentUser: user } = useAppStore()
   const [tab, setTab] = useState<StudioTab>('chat')
-  const [credits, setCredits] = useState(4280)
+  const [credits, setCredits] = useState(user?.credits ?? 0)
 
   useEffect(() => {
     if (activeSubTab) {

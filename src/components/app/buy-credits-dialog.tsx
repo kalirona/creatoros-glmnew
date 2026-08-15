@@ -28,7 +28,7 @@ export function BuyCreditsDialog({ open, onOpenChange, currentCredits, onPurchas
     const pkg = PACKAGES.find((p) => p.id === selected)!
     onPurchase?.(pkg.credits)
     toast.success(`Added ${pkg.credits.toLocaleString()} credits!`, {
-      description: `$${pkg.price} charged to your card ending in 4242.`,
+      description: `$${pkg.price} charged to your payment method.`,
     })
     onOpenChange(false)
   }
