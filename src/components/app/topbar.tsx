@@ -15,7 +15,7 @@ import Link from 'next/link'
 
 export function Topbar() {
   const { setCommandOpen, theme, toggleTheme, activeModule, setActiveModule, triggerCreateDialog } = useAppStore()
-  const { isSignedIn, user } = useUser()
+  const { isSignedIn, isLoaded, user } = useUser()
   const current = ALL_NAV_ITEMS.find((i) => i.id === activeModule)
 
   const create = (label: string, target: ModuleId) => {
@@ -111,12 +111,12 @@ export function Topbar() {
 
       {/* Clerk Auth Controls */}
       <div className="flex items-center gap-2">
-        {isSignedIn ? (
+        {isLoaded && isSignedIn ? (
           /* Signed in: show user button (avatar + dropdown) */
           <div className="[&>div]:!h-8 [&>div]:!w-8">
             <UserButton />
           </div>
-        ) : (
+        ) : isLoaded && !isSignedIn ? (
           /* Signed out: show sign-in + sign-up buttons */
           <>
             <Link href="/sign-in">
@@ -126,7 +126,7 @@ export function Topbar() {
               <Button size="sm" className="h-8 text-xs">Sign up</Button>
             </Link>
           </>
-        )}
+        ) : null}
       </div>
     </header>
   )

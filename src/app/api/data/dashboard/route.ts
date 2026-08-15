@@ -5,6 +5,8 @@ import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
   const workspace = await db.workspace.findFirst({
     include: { members: { include: { user: true } } },
   })

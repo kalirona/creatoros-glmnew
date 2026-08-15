@@ -3,6 +3,8 @@ import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
   const [orders, customers, products] = await Promise.all([
     db.order.findMany({ orderBy: { createdAt: 'desc' }, include: { product: true } }),
     db.customer.findMany({ orderBy: { ltv: 'desc' } }),

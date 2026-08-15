@@ -3,6 +3,8 @@ import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
   const plans = await db.membershipPlan.findMany({ orderBy: { price: 'asc' } })
   const totalMembers = plans.reduce((s, p) => s + p.members, 0)
   const mrr = plans.filter((p) => p.interval === 'MONTHLY').reduce((s, p) => s + p.price * p.members, 0) +

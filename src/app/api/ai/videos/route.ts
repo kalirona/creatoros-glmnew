@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       cleanResolution = resolution
     }
 
-    // ── Demo user ─────────────────────────────────────────────────────────
+    // ── Authenticated user ─────────────────────────────────────────────────────────
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })

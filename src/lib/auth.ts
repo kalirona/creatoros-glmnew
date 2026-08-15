@@ -179,6 +179,27 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     },
   })
 
+  // Create a default workspace for the new user + OWNER membership
+  const workspace = await db.workspace.create({
+    data: {
+      name: `${name}'s Workspace`,
+      slug: `ws-${created.id.slice(-8)}`,
+      plan: 'PRO',
+    },
+  })
+  await db.workspaceMember.create({
+    data: {
+      userId: created.id,
+      workspaceId: workspace.id,
+      role: 'OWNER',
+    },
+  })
+  await db.user.update({
+    where: { id: created.id },
+    data: { activeWorkspaceId: workspace.id },
+  })
+  created.activeWorkspaceId = workspace.id
+
   return await toCurrentUser(created)
 }
 

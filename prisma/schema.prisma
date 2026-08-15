@@ -24,7 +24,7 @@ model User {
   // signs in via Clerk for the first time.
   clerkId           String? @unique
   // activeWorkspaceId supports future workspace switching. Do NOT implement
-  // workspace switching yet. Do NOT change DEMO_WORKSPACE_ID. Nullable so
+  // workspace switching yet. Nullable so existing users are unaffected.
   // existing users are unaffected.
   activeWorkspaceId String?
   createdAt     DateTime @default(now())

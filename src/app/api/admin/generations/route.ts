@@ -4,6 +4,8 @@ import { requireSuperAdmin } from '@/lib/creator-ai'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
+  const auth = await requireSuperAdmin()
+  if (auth.error) return auth.error
   const generations = await db.aiGeneration.findMany({
     orderBy: { createdAt: 'desc' },
     take: 50,

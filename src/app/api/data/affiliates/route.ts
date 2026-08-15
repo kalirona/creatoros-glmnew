@@ -3,6 +3,8 @@ import { getCurrentUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return NextResponse.json({ error: 'Authentication required.' }, { status: 401 })
   const affiliates = await db.affiliate.findMany({ orderBy: { earnings: 'desc' } })
   const totalEarnings = affiliates.reduce((s, a) => s + a.earnings, 0)
   const totalClicks = affiliates.reduce((s, a) => s + a.clicks, 0)

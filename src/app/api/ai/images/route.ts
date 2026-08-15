@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const cleanRatio =
       aspectRatio && validRatios.includes(aspectRatio) ? aspectRatio : undefined
 
-    // ── Demo user ─────────────────────────────────────────────────────────
+    // ── Authenticated user ─────────────────────────────────────────────────────────
     const user = await getCurrentUser()
     if (!user) {
       return NextResponse.json({ error: 'No user account is available.' }, { status: 400 })
