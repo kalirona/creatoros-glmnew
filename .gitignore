@@ -56,3 +56,5 @@ server.log
 /.clerk/
 *.pid
 tool-results/
+/db/
+db/
